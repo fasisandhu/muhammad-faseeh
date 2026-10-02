@@ -3,7 +3,7 @@ import { createServer } from 'node:http';
 import { parseArgs } from 'node:util';
 import { calculateJwkThumbprint } from 'jose';
 import * as client from 'openid-client';
-import { API_BASE_URL, callApi, type ApiResponse } from './api.js';
+import { API_BASE_URL, callApi, resolveApiUrl, type ApiResponse } from './api.js';
 import {
   buildLoginRequest,
   DEFAULT_OIDC,
@@ -60,6 +60,10 @@ async function login(): Promise<void> {
         res.writeHead(404).end();
         return;
       }
+      if (!url.searchParams.has('code') || !url.searchParams.has('state')) {
+        res.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' }).end('Missing code or state.');
+        return;
+      }
       exchangeCode(config, url, request, keyPair).then(
         (result) => {
           res
@@ -75,6 +79,15 @@ async function login(): Promise<void> {
           server.close();
           reject(error instanceof Error ? error : new Error(String(error)));
         },
+      );
+    });
+    server.once('error', (error: NodeJS.ErrnoException) => {
+      reject(
+        new Error(
+          error.code === 'EADDRINUSE'
+            ? `Port ${redirect.port} is already in use. Stop the other process (or a previous login) and retry.`
+            : `Could not start the login callback server: ${error.message}`,
+        ),
       );
     });
     server.listen(Number(redirect.port), redirect.hostname, () => {
@@ -97,19 +110,32 @@ async function login(): Promise<void> {
   console.log(`Logged in. Tokens are bound to DPoP key ${await calculateJwkThumbprint(stored.publicJwk)}.`);
 }
 
+const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
 async function logout(): Promise<void> {
   const session = await loadSession();
   if (!session) {
     console.log('Not logged in.');
     return;
   }
-  print(await callApi('POST', '/api/v1/auth/logout'));
-  if (session.refreshToken !== null) {
-    const config = await discover(DEFAULT_OIDC);
-    await client.tokenRevocation(config, session.refreshToken).catch(() => undefined);
+  try {
+    try {
+      print(await callApi('POST', '/api/v1/auth/logout'));
+    } catch (error) {
+      console.warn(`Warning: could not end the session at the API (${errorMessage(error)}).`);
+    }
+    if (session.refreshToken !== null) {
+      try {
+        const config = await discover(DEFAULT_OIDC);
+        await client.tokenRevocation(config, session.refreshToken);
+      } catch (error) {
+        console.warn(`Warning: could not revoke the refresh token at Keycloak (${errorMessage(error)}).`);
+      }
+    }
+  } finally {
+    await clearSession();
+    console.log('Session removed.');
   }
-  await clearSession();
-  console.log('Session removed.');
 }
 
 const query = (values: Record<string, string | undefined>): string => {
@@ -153,8 +179,10 @@ function dispatch(
           autoRenew: values['no-auto-renew'] !== true,
         });
       }
-      if (sub === 'auto-renew')
-        return callApi('PATCH', `/api/v1/subscriptions/${rest[0] ?? ''}`, { autoRenew: rest[1] === 'on' });
+      if (sub === 'auto-renew') {
+        if (rest[0] === undefined || (rest[1] !== 'on' && rest[1] !== 'off')) return null;
+        return callApi('PATCH', `/api/v1/subscriptions/${rest[0]}`, { autoRenew: rest[1] === 'on' });
+      }
       if (sub === 'cancel') return callApi('POST', `/api/v1/subscriptions/${rest[0] ?? ''}/cancellation`);
       return null;
     case 'admin':
@@ -171,6 +199,7 @@ function dispatch(
       return null;
     case 'request': {
       const [path, json] = rest;
+      resolveApiUrl(path ?? '/');
       return callApi(
         (sub ?? 'GET').toUpperCase(),
         path ?? '/',
@@ -211,6 +240,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : error);
+  console.error(errorMessage(error));
   process.exitCode = 1;
 });

@@ -1,6 +1,6 @@
 import * as client from 'openid-client';
 import { DEFAULT_OIDC, discover, importDpopKeyPair, type DpopKeyPair } from './oidc.js';
-import { loadSession, saveSession, type StoredSession } from './session-store.js';
+import { clearSession, loadSession, saveSession, type StoredSession } from './session-store.js';
 
 export const API_BASE_URL = process.env.GGI_API_URL ?? 'http://localhost:3000';
 
@@ -8,6 +8,16 @@ export interface ApiResponse {
   status: number;
   body: unknown;
   requestId: string | null;
+}
+
+/** Resolves a path against the API and refuses any other origin, so a DPoP token is never sent to another host. */
+export function resolveApiUrl(path: string): URL {
+  const base = new URL(API_BASE_URL);
+  const url = new URL(path, base);
+  if (url.origin !== base.origin) {
+    throw new Error(`Refusing to send credentials to ${url.origin}: only ${base.origin} is allowed.`);
+  }
+  return url;
 }
 
 /** Calls the API with `Authorization: DPoP <token>` and a fresh proof signed by our key (openid-client does both). */
@@ -26,7 +36,7 @@ export async function sendWithDpop(
     response = await client.fetchProtectedResource(
       config,
       accessToken,
-      new URL(path, API_BASE_URL),
+      resolveApiUrl(path),
       method,
       body === undefined ? undefined : JSON.stringify(body),
       headers,
@@ -41,22 +51,43 @@ export async function sendWithDpop(
     }
   }
   const text = await response.text();
+  let parsed: unknown = null;
+  if (text.length > 0) {
+    try {
+      parsed = JSON.parse(text) as unknown;
+    } catch {
+      parsed = text; // not JSON (for example a proxy error page): return the raw text
+    }
+  }
   return {
     status: response.status,
-    body: text.length > 0 ? (JSON.parse(text) as unknown) : null,
+    body: parsed,
     requestId: response.headers.get('x-request-id'),
   };
 }
+
+const SESSION_EXPIRED = 'Session expired. Run `pnpm cli login`.';
 
 async function ensureFresh(
   config: client.Configuration,
   session: StoredSession,
   keyPair: DpopKeyPair,
 ): Promise<StoredSession> {
-  if (session.expiresAt - 30_000 > Date.now() || session.refreshToken === null) return session;
-  const tokens = await client.refreshTokenGrant(config, session.refreshToken, undefined, {
-    DPoP: client.getDPoPHandle(config, keyPair),
-  });
+  if (session.expiresAt - 30_000 > Date.now()) return session;
+  if (session.refreshToken === null) {
+    if (session.expiresAt > Date.now()) return session;
+    await clearSession();
+    throw new Error(SESSION_EXPIRED);
+  }
+  let tokens: Awaited<ReturnType<typeof client.refreshTokenGrant>>;
+  try {
+    tokens = await client.refreshTokenGrant(config, session.refreshToken, undefined, {
+      DPoP: client.getDPoPHandle(config, keyPair),
+    });
+  } catch {
+    await clearSession();
+    throw new Error(SESSION_EXPIRED);
+  }
   const refreshed: StoredSession = {
     ...session,
     accessToken: tokens.access_token,

@@ -30,10 +30,11 @@ check('alice authenticates with a DPoP-bound token', me.status === 200, `HTTP ${
 const bearer = await fetch(`${API_BASE_URL}/api/v1/auth/me`, {
   headers: { authorization: `Bearer ${alice.tokens.access_token}` },
 });
+const challenge = bearer.headers.get('www-authenticate') ?? '';
 check(
   'the same token used as a plain Bearer token is rejected',
-  bearer.status === 401,
-  `HTTP ${bearer.status}`,
+  bearer.status === 401 && challenge.startsWith('DPoP'),
+  `HTTP ${bearer.status}, WWW-Authenticate: ${challenge}`,
 );
 
 const proof = await new SignJWT({
@@ -59,8 +60,13 @@ check(
 
 // Make the run repeatable: cancel bundles left over from earlier runs.
 const active = await alice.call('GET', '/api/v1/subscriptions?status=ACTIVE&limit=100');
-for (const sub of ((active.body ?? { data: [] }) as { data: { id: string }[] }).data) {
-  await alice.call('POST', `/api/v1/subscriptions/${sub.id}/cancellation`);
+const activeData = (active.body as { data?: unknown } | null)?.data;
+if (active.status !== 200 || !Array.isArray(activeData)) {
+  check('leftover bundles can be listed', false, `HTTP ${active.status} ${JSON.stringify(active.body)}`);
+} else {
+  for (const sub of activeData as { id: string }[]) {
+    await alice.call('POST', `/api/v1/subscriptions/${sub.id}/cancellation`);
+  }
 }
 
 let exhausted: ApiResponse | null = null;
@@ -74,19 +80,22 @@ check(
 );
 
 let bundleId: string | null = null;
-for (let attempt = 1; attempt <= 6 && bundleId === null; attempt += 1) {
+let purchaseFailure = '';
+for (let attempt = 1; attempt <= 6 && bundleId === null && purchaseFailure === ''; attempt += 1) {
   const res = await alice.call('POST', '/api/v1/subscriptions', {
     tier: 'BASIC',
     billingCycle: 'MONTHLY',
     autoRenew: true,
   });
-  if (res.status === 201) bundleId = String(body(res).data?.id);
-  else
-    console.log(
-      `info  purchase attempt ${attempt} declined by the simulated gateway (${body(res).code ?? res.status})`,
-    );
+  const id = body(res).data?.id;
+  if (res.status === 201 && typeof id === 'string') bundleId = id;
+  else if (body(res).code === 'PAYMENT_FAILED') {
+    console.log(`info  purchase attempt ${attempt} declined by the simulated gateway (PAYMENT_FAILED)`);
+  } else {
+    purchaseFailure = `HTTP ${res.status} ${JSON.stringify(res.body)}`;
+  }
 }
-check('a Basic bundle can be bought', bundleId !== null);
+check('a Basic bundle can be bought', bundleId !== null, purchaseFailure);
 
 const paid = await alice.call('POST', '/api/v1/chat/messages', { question: 'A paid question' });
 const paidMessage = (body(paid).data as { message?: { charge?: { source?: string } } } | undefined)?.message;
@@ -101,14 +110,25 @@ check(
   cancel.status === 200 && body(cancel).data?.status === 'INACTIVE',
 );
 const afterCancel = await alice.call('POST', '/api/v1/chat/messages', { question: 'After cancellation' });
-check('messages are refused again after cancellation', afterCancel.status === 402);
+check(
+  'messages are refused again after cancellation',
+  afterCancel.status === 402 && body(afterCancel).code === 'QUOTA_EXHAUSTED',
+  `HTTP ${afterCancel.status}`,
+);
 
 check('alice cannot read admin metrics', (await alice.call('GET', '/api/v1/admin/metrics')).status === 403);
 const admin = await session('admin@example.com', 'Admin-Demo-Pass-2026!');
 check('admin can read metrics', (await admin.call('GET', '/api/v1/admin/metrics')).status === 200);
+const billing = await admin.call('POST', '/api/v1/admin/billing-runs');
+const summary = body(billing).data;
 check(
   'admin can trigger a billing run',
-  (await admin.call('POST', '/api/v1/admin/billing-runs')).status === 200,
+  billing.status === 200 &&
+    typeof summary?.processed === 'number' &&
+    typeof summary.renewed === 'number' &&
+    typeof summary.paymentFailed === 'number' &&
+    typeof summary.expired === 'number',
+  `HTTP ${billing.status} ${JSON.stringify(billing.body)}`,
 );
 
 check('logout succeeds', (await alice.call('POST', '/api/v1/auth/logout')).status === 204);
