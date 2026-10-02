@@ -36,6 +36,93 @@ New accounts can self-register on the Keycloak login page; "Sign in with GitHub"
 
 > Why a CLI? Requests must carry a DPoP proof signed with the client's private key, which curl and Postman cannot produce. `pnpm cli request GET /api/v1/auth/me` works for any endpoint.
 
+### What it looks like when it runs
+
+Real output from the local stack, if you would rather read it than run it.
+
+`pnpm e2e:smoke` logs in through the real Keycloak login form and exercises the whole API:
+
+```text
+PASS  alice authenticates with a DPoP-bound token  (HTTP 200)
+PASS  the same token used as a plain Bearer token is rejected  (HTTP 401, WWW-Authenticate: DPoP error="invalid_token", algs="ES256 RS256 PS256 EdDSA")
+PASS  a replayed DPoP proof is rejected  (200 then 401)
+PASS  the free quota ends with a typed 402 QUOTA_EXHAUSTED
+PASS  a Basic bundle can be bought
+PASS  the next message is charged to the bundle
+PASS  cancellation ends the bundle immediately
+PASS  messages are refused again after cancellation  (HTTP 402)
+PASS  alice cannot read admin metrics
+PASS  admin can read metrics
+PASS  admin can trigger a billing run  (HTTP 200 {"data":{"processed":0,"renewed":0,"paymentFailed":0,"expired":0}})
+PASS  logout succeeds
+PASS  tokens of a logged-out session are rejected
+
+13/13 checks passed
+```
+
+<details>
+<summary>A CLI session as alice: free quota used up, one declined payment, then a message charged to the newest bundle (responses trimmed)</summary>
+
+```text
+$ pnpm cli chat "What is DPoP?"
+HTTP 402
+{
+  "type": "urn:ggi:problem:quota-exhausted",
+  "title": "Quota exhausted",
+  "status": 402,
+  "detail": "All 3 free messages for 2026-10 are used and no active bundle has messages left.",
+  "code": "QUOTA_EXHAUSTED",
+  "requestId": "bbf72b8e-040d-4b57-b3b5-5a358d090a4d",
+  "details": { "period": "2026-10", "free": { "limit": 3, "used": 3, "resetsAt": "2026-11-01T00:00:00.000Z" }, "bundles": { "active": 0, "withRemaining": 0 } }
+}
+
+$ pnpm cli subs create BASIC MONTHLY
+HTTP 201
+{ "data": { "id": "fc592044-…", "tier": "BASIC", "maxMessages": 10, "status": "ACTIVE", "autoRenew": true,
+            "startDate": "2026-10-02T17:39:50.850Z", "endDate": "2026-11-02T17:39:50.850Z", … } }
+
+$ pnpm cli subs create BASIC MONTHLY
+HTTP 402
+{
+  "type": "urn:ggi:problem:payment-failed",
+  "title": "Payment failed",
+  "status": 402,
+  "detail": "The payment was declined, so the subscription is inactive.",
+  "code": "PAYMENT_FAILED",
+  "details": { "subscriptionId": "1b3aa059-…", "reason": "card_declined" }
+}
+
+$ pnpm cli subs create BASIC MONTHLY
+HTTP 201
+{ "data": { "id": "70da505c-…", "tier": "BASIC", "status": "ACTIVE", "startDate": "2026-10-02T17:39:53.730Z", … } }
+
+$ pnpm cli chat "What is DPoP?"
+HTTP 201
+{
+  "data": {
+    "message": {
+      "question": "What is DPoP?",
+      "answer": "(Mocked gpt-4o-mini response.) You asked: \"What is DPoP?\". In production this request would go to the OpenAI Chat Completions API; …",
+      "status": "COMPLETED",
+      "usage": { "promptTokens": 42, "completionTokens": 58, "totalTokens": 100 },
+      "charge": { "source": "BUNDLE", "period": "2026-10", "subscriptionId": "70da505c-…" },
+      "latencyMs": 1221
+    },
+    "quota": {
+      "free": { "limit": 3, "used": 3, "remaining": 0 },
+      "bundles": [
+        { "subscriptionId": "70da505c-…", "tier": "BASIC", "remainingMessages": 9 },
+        { "subscriptionId": "fc592044-…", "tier": "BASIC", "remainingMessages": 10 }
+      ]
+    }
+  }
+}
+```
+
+The message was charged to `70da505c`, the bundle bought last, and the older one still has all 10 messages: "deduct from the bundle with the latest remaining quota". The declined purchase is kept as an `INACTIVE` record with reason `PAYMENT_FAILED`.
+
+</details>
+
 ## Requirements → code
 
 <!-- One row per bullet of the PDF. Paths are links. Keep in sync with the code. -->
