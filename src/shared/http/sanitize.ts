@@ -8,17 +8,23 @@ const INVISIBLE_FORMATTING = /[\u200B\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFE
 
 const codePoints = (value: string): number => Array.from(value).length;
 
+const stripUnsafeCharacters = (value: string): string =>
+  value.replace(CONTROL_CHARACTERS, '').replace(INVISIBLE_FORMATTING, '');
+
 /**
- * Free-text sanitisation (spec §9.7): NFC, strip control and invisible formatting characters, drop all HTML
- * (script/style contents included). The result is HTML-escaped, so it is safe in any HTML context.
+ * Free-text sanitisation (spec §9.7): strip control and invisible formatting characters, drop all HTML
+ * (script/style contents included), then strip again and NFC-normalise. The second pass is required because
+ * sanitize-html decodes numeric entities (e.g. &#x202E;) into the very characters the first pass removes, and
+ * normalising last keeps text composed when stripping removes a character between a letter and a combining mark.
+ * The result is HTML-escaped, so it is safe in any HTML context.
  */
 export function sanitizeText(input: string): string {
-  const normalized = input.normalize('NFC').replace(CONTROL_CHARACTERS, '').replace(INVISIBLE_FORMATTING, '');
-  return sanitizeHtml(normalized, {
+  const html = sanitizeHtml(stripUnsafeCharacters(input), {
     allowedTags: [],
     allowedAttributes: {},
     disallowedTagsMode: 'discard',
-  }).trim();
+  });
+  return stripUnsafeCharacters(html).normalize('NFC').trim();
 }
 
 export const sanitizedText = (maxLength: number) =>

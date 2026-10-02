@@ -40,6 +40,26 @@ describe('sanitizeText', () => {
   });
 });
 
+describe('sanitizeText entity-decoded characters', () => {
+  it.each([
+    ['bidi override (hex entity)', 'a&#x202E;b', 'ab'],
+    ['zero-width space (decimal entity)', 'a&#8203;b', 'ab'],
+    ['byte order mark (hex entity)', 'a&#xFEFF;b', 'ab'],
+    ['BEL control (hex entity)', 'a&#x7;b', 'ab'],
+    ['BEL control (decimal entity)', 'a&#7;b', 'ab'],
+  ])('removes %s', (_name, input, expected) => {
+    expect(sanitizeText(input)).toBe(expected);
+  });
+
+  it('keeps ZWJ/ZWNJ written as entities', () => {
+    expect(sanitizeText('a&#x200D;b&#8204;c')).toBe('a\u200Db\u200Cc');
+  });
+
+  it('ends composed when stripping separates a letter from its combining mark', () => {
+    expect(sanitizeText('e\u200B\u0301')).toBe('\u00E9');
+  });
+});
+
 describe('sanitizedText schema', () => {
   const schema = sanitizedText(10);
 
