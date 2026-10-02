@@ -3,6 +3,7 @@ import type { Redis } from 'ioredis';
 import type { Logger } from 'pino';
 import { createApp } from './app.js';
 import { createIdentityModule } from './modules/identity/index.js';
+import { createSubscriptionsModule } from './modules/subscriptions/index.js';
 import type { Job } from './shared/application/jobs.js';
 import type { Clock } from './shared/domain/clock.js';
 import type { IdGenerator } from './shared/domain/ids.js';
@@ -66,14 +67,20 @@ export async function buildContainer(
     limiters: rateLimiters,
     userCacheTtlMs: overrides.userCacheTtlMs,
   });
-  // MODULES: Tasks 10–13 create the subscriptions, chat and admin modules here and append their routes/jobs.
-  // Placeholders until those modules consume the values; each task deletes its own line.
+  // MODULES: Tasks 11–13 add billing, chat and admin here and append their routes/jobs.
+  const subscriptions = createSubscriptionsModule({
+    config,
+    db,
+    clock,
+    ids,
+    random: paymentRandom,
+    logger,
+  });
+  // Placeholder until the chat module consumes it (Task 12).
   /* eslint-disable @typescript-eslint/no-meaningless-void-operator */
-  void ids;
-  void paymentRandom;
   void llmRandom;
   /* eslint-enable @typescript-eslint/no-meaningless-void-operator */
-  const routes = [...identity.routes];
+  const routes = [...identity.routes, ...subscriptions.routes];
   const jobs: Job[] = [];
 
   const app = createApp({
