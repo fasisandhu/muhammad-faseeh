@@ -13,7 +13,7 @@ Backend for the GGI "Backend Test Posture" assessment ([PDF](docs/GGI%20-%20Back
 Prerequisites: Docker Desktop, Node.js 24, pnpm 9 (`corepack enable`).
 
 ```bash
-cp .env.example .env            # PowerShell: Copy-Item .env.example .env — then replace every change-me value
+cp .env.example .env            # PowerShell: Copy-Item .env.example .env, then replace every change-me value
 docker compose up -d --build    # postgres, redis, keycloak (realm auto-imported), migrations, api
 pnpm install
 pnpm e2e:smoke                  # logs in through the real Keycloak and exercises the whole API (13 checks)
@@ -44,7 +44,7 @@ New accounts can self-register on the Keycloak login page; "Sign in with GitHub"
 | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Secured endpoint accepts a question; mocked OpenAI response with simulated latency                   | `POST /api/v1/chat/messages` → [ask-question.ts](src/modules/chat/application/ask-question.ts), [mock-openai-client.ts](src/modules/chat/infrastructure/mock-openai-client.ts)                                                    |
 | Store question, answer, token usage, request metadata                                                | [`chat_messages`](src/modules/chat/repositories/schema.ts) (question, answer, prompt/completion/total tokens, request id, user, timestamps, latency)                                                                              |
-| Monthly usage per user; 3 free messages; reset on the 1st                                            | [`monthly_usage`](src/modules/chat/repositories/schema.ts) keyed by `(user, YYYY-MM UTC)` — a new month is a new row, [UsagePeriod](src/modules/chat/domain/value-objects/usage-period.ts)                                        |
+| Monthly usage per user; 3 free messages; reset on the 1st                                            | [`monthly_usage`](src/modules/chat/repositories/schema.ts) keyed by `(user, YYYY-MM UTC)`: a new month is a new row, [UsagePeriod](src/modules/chat/domain/value-objects/usage-period.ts)                                         |
 | Bundle required after free quota; Basic 10 / Pro 100 / Enterprise unlimited; multiple active bundles | [QuotaAllocator](src/modules/chat/domain/services/quota-allocator.ts), [PlanCatalog](src/modules/subscriptions/domain/services/plan-catalog.ts)                                                                                   |
 | Deduct from the bundle with the latest remaining quota                                               | [BundleSelectionPolicy](src/modules/subscriptions/domain/policies/bundle-selection-policy.ts)                                                                                                                                     |
 | Structured, typed error when no quota                                                                | `402 QUOTA_EXHAUSTED` problem document ([errors.ts](src/modules/chat/domain/errors.ts))                                                                                                                                           |
@@ -61,7 +61,7 @@ New accounts can self-register on the Keycloak login page; "Sign in with GitHub"
 | Clean Architecture layers; framework-free business logic; independent modules                        | `src/modules/{chat,subscriptions,identity,admin}`; rules **enforced by ESLint** ([eslint.config.js](eslint.config.js), [layer-rules.test.ts](test/unit/architecture/layer-rules.test.ts))                                         |
 | TS strict, migrations, env config, ESLint + Prettier enforced                                        | [tsconfig.json](tsconfig.json), [migrations/](migrations), [env.ts](src/shared/infrastructure/config/env.ts), husky pre-commit + [CI](.github/workflows/ci.yml)                                                                   |
 | Centralised errors, structured logs (request id, user id, response time), health, metrics            | [error-handler.ts](src/shared/http/error-handler.ts), [http-logger.ts](src/shared/http/http-logger.ts), `/health/*`, `GET /api/v1/admin/metrics`                                                                                  |
-| Unit + integration tests; auth provider mocked, not bypassed                                         | [test/](test) — [mock-idp.ts](test/support/mock-idp.ts) serves a real JWKS; the production verifier runs unchanged                                                                                                                |
+| Unit + integration tests; auth provider mocked, not bypassed                                         | [test/](test); [mock-idp.ts](test/support/mock-idp.ts) serves a real JWKS; the production verifier runs unchanged                                                                                                                 |
 
 ## Architecture
 
@@ -81,13 +81,13 @@ flowchart LR
 
 Every module has the same layers, and **ESLint enforces the arrows** (CI fails otherwise):
 
-| Layer                                                          | Contains                                                              | May depend on                                                     |
-| -------------------------------------------------------------- | --------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| `domain/` (entities, value-objects, services, policies, ports) | business rules in plain TypeScript                                    | `src/shared/domain` only — no Express, Drizzle, Redis, Zod, jose… |
-| `application/`                                                 | use cases (one class per operation)                                   | domain ports, shared ports                                        |
-| `repositories/`                                                | Drizzle schema + port implementations                                 | own domain, DB helpers                                            |
-| `infrastructure/`                                              | adapters (mock OpenAI, payment gateway, jose verifiers, Redis stores) | own domain                                                        |
-| `controllers/`                                                 | route definitions, Zod schemas, DTO mappers                           | own application/domain, `shared/http`                             |
+| Layer                                                          | Contains                                                              | May depend on                                                    |
+| -------------------------------------------------------------- | --------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `domain/` (entities, value-objects, services, policies, ports) | business rules in plain TypeScript                                    | `src/shared/domain` only; no Express, Drizzle, Redis, Zod, jose… |
+| `application/`                                                 | use cases (one class per operation)                                   | domain ports, shared ports                                       |
+| `repositories/`                                                | Drizzle schema + port implementations                                 | own domain, DB helpers                                           |
+| `infrastructure/`                                              | adapters (mock OpenAI, payment gateway, jose verifiers, Redis stores) | own domain                                                       |
+| `controllers/`                                                 | route definitions, Zod schemas, DTO mappers                           | own application/domain, `shared/http`                            |
 
 Modules reference each other only through `index.ts`. Chat needs bundles but never imports the subscriptions module: it declares a `BundleQuotaPort`; the composition root ([bootstrap.ts](src/bootstrap.ts)) passes subscriptions' `BundleQuotaService`, which matches it structurally.
 
@@ -101,7 +101,7 @@ sequenceDiagram
   participant M as Mock OpenAI
   C->>A: POST /chat/messages (DPoP)
   A->>DB: Tx1: lock monthly_usage row (FOR UPDATE)<br/>free quota? else lock newest bundle and consume<br/>insert message PENDING
-  A->>M: complete() — no transaction open, 8 s timeout
+  A->>M: complete(), no transaction open, 8 s timeout
   alt model answered
     A->>DB: Tx2: store answer + tokens, COMPLETED
     A-->>C: 201 message + remaining quota
@@ -115,17 +115,17 @@ Locks are held for milliseconds, never during the model call. All flows take loc
 
 ### Key decisions
 
-| Decision                                                                 | Why                                                                                   |
-| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
-| Express 5 with an explicit middleware order                              | every security control is visible, in order, in one file                              |
-| Routes declared as data (`defineRoute`)                                  | a route cannot exist without an access rule; the inventory test proves none is open   |
-| Keycloak in Docker, realm committed as JSON                              | standard OIDC, reproducible for reviewers, native DPoP                                |
-| DPoP for "token alone is not enough"                                     | the only option that makes a leaked token useless; a standard, not custom crypto      |
-| Redis for limits, replay cache, revocations                              | shared across API instances, TTL-native                                               |
-| Ambient transactions (AsyncLocalStorage)                                 | use cases stay framework-free; repositories in different modules join one transaction |
-| Least-privilege DB role (`SELECT, INSERT, UPDATE` — no `DELETE`, no DDL) | history cannot be deleted even by a bug; migrations run as a separate owner role      |
-| RFC 9457 problem documents with stable `code`                            | typed, machine-readable errors                                                        |
-| Keyset pagination (`created_at, id`)                                     | stable pages under concurrent inserts                                                 |
+| Decision                                                                | Why                                                                                   |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Express 5 with an explicit middleware order                             | every security control is visible, in order, in one file                              |
+| Routes declared as data (`defineRoute`)                                 | a route cannot exist without an access rule; the inventory test proves none is open   |
+| Keycloak in Docker, realm committed as JSON                             | standard OIDC, reproducible for reviewers, native DPoP                                |
+| DPoP for "token alone is not enough"                                    | the only option that makes a leaked token useless; a standard, not custom crypto      |
+| Redis for limits, replay cache, revocations                             | shared across API instances, TTL-native                                               |
+| Ambient transactions (AsyncLocalStorage)                                | use cases stay framework-free; repositories in different modules join one transaction |
+| Least-privilege DB role (`SELECT, INSERT, UPDATE`, no `DELETE`, no DDL) | history cannot be deleted even by a bug; migrations run as a separate owner role      |
+| RFC 9457 problem documents with stable `code`                           | typed, machine-readable errors                                                        |
+| Keyset pagination (`created_at, id`)                                    | stable pages under concurrent inserts                                                 |
 
 ## Domain rules and interpretations
 
@@ -154,18 +154,18 @@ The PDF leaves some rules open; these are the choices made, all in one place in 
 
 ### "A token alone must not be enough": DPoP in plain terms
 
-A normal access token is like cash: whoever holds it can spend it. With **DPoP** (Demonstrating Proof-of-Possession, RFC 9449) the token is bound to a key pair that only the real client holds — like a boarding pass with your passport number printed on it.
+A normal access token is like cash: whoever holds it can spend it. With **DPoP** (Demonstrating Proof-of-Possession, RFC 9449) the token is bound to a key pair that only the real client holds: like a boarding pass with your passport number printed on it.
 
 1. At login the client creates a key pair; the private key never leaves it.
 2. Keycloak puts the public key's thumbprint into the token (`cnf.jkt`).
 3. Every API call carries the token **and** a one-time proof signed with the private key: _method, URL, time, hash of this token, unique id_.
 4. The API accepts the call only if the proof is valid, fresh (issued at most 60 s ago, and at most 5 s in the future to allow for clock drift), for this exact request, signed by the key the token is bound to, and never seen before.
 
-A thief with the token cannot sign proofs. A captured proof is no better: a proof is bound to one HTTP method, one URL and this access token, its `jti` is accepted once, and it goes stale after 60 s — so it cannot be replayed or redirected to another request.
+A thief with the token cannot sign proofs. A captured proof is no better: a proof is bound to one HTTP method, one URL and this access token, its `jti` is accepted once, and it goes stale after 60 s, so it cannot be replayed or redirected to another request.
 
 ### What the API checks on every `/api` request
 
-1. Per-IP limits (global, then per endpoint group) — before any crypto.
+1. Per-IP limits (global, then per endpoint group), before any crypto.
 2. `Authorization: DPoP <token>` (Bearer is refused) and exactly one `DPoP` header.
 3. Token signature against Keycloak's JWKS (cached), algorithm allowlist (no `none`/HMAC), `iss`, `aud` contains `ggi-api`, `exp`/`nbf`, `sub`, and `cnf.jkt` present.
 4. Proof: `typ`, algorithm, public-only embedded key, signature, `htm`/`htu` match the request (built from `PUBLIC_BASE_URL`, never the `Host` header), `iat` window, `ath` = hash of the token, key thumbprint = `cnf.jkt`, `jti` unseen (Redis `SET NX`; fails closed if Redis is down).
@@ -189,7 +189,7 @@ Repeated authentication failures from one IP exhaust an auth-failure budget (`42
 | Mass assignment                                                  | strict schemas reject unknown fields; price, limits, dates, status are server-derived                              |
 | Stored XSS                                                       | markup stripped and text escaped on input; JSON-only responses; `CSP default-src 'none'`                           |
 | SQL injection                                                    | parameterised queries only; ESLint bans `sql.raw`; ids validated as UUIDs                                          |
-| CSRF                                                             | no cookies — tokens travel in headers; exact-origin CORS allowlist                                                 |
+| CSRF                                                             | no cookies, tokens travel in headers; exact-origin CORS allowlist                                                  |
 | Clickjacking, MIME sniffing                                      | `frame-ancestors 'none'`, `X-Frame-Options: DENY`, `nosniff`                                                       |
 | Resource exhaustion                                              | 16 KB bodies, 2 KB URLs, socket timeouts, 10 s request deadline, rate limits per IP and per user                   |
 | Quota races, double charging                                     | row locks in transactions, DB check constraints, unique payment per period, `SKIP LOCKED` billing                  |
@@ -201,12 +201,12 @@ Repeated authentication failures from one IP exhaust an auth-failure budget (`42
 
 | Group                                    | Per IP        | Per user |
 | ---------------------------------------- | ------------- | -------- |
-| everything (before auth)                 | 300/min       | —        |
+| everything (before auth)                 | 300/min       | none     |
 | `/auth/*`                                | 20/min        | 10/min   |
 | `/chat/*`                                | 60/min        | 20/min   |
 | `/subscriptions*`, `/subscription-plans` | 60/min        | 30/min   |
 | `/admin/*`                               | 120/min       | 60/min   |
-| failed authentications                   | 30 per 15 min | —        |
+| failed authentications                   | 30 per 15 min | none     |
 
 Responses carry `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`; `429` adds `Retry-After`. Behind a proxy set `TRUST_PROXY` to the hop count so per-IP limits see the real client.
 
@@ -362,4 +362,4 @@ migrations/   keycloak/   docker/   cli/   scripts/   test/{unit,integration,sup
 
 ## How this was built
 
-I used an AI coding assistant (Claude Code) as a pair programmer for this assessment. I made the design decisions — Express 5, Keycloak with DPoP-bound tokens, the reserve → model → finalize quota flow, and the readings of the ambiguous requirements listed above — and worked from a written design and a test-first implementation plan. The assistant wrote much of the code against that plan; every change went through the same gates as the rest of the repository (strict TypeScript, ESLint layer rules, unit and integration tests, the end-to-end smoke test and CI), and I reviewed it. I'm happy to walk through any part of the code.
+I used an AI coding assistant (Claude Code) as a pair programmer for this assessment. I made the design decisions (Express 5, Keycloak with DPoP-bound tokens, the reserve → model → finalize quota flow, and the readings of the ambiguous requirements listed above) and worked from a written design and a test-first implementation plan. The assistant wrote much of the code against that plan; every change went through the same gates as the rest of the repository (strict TypeScript, ESLint layer rules, unit and integration tests, the end-to-end smoke test and CI), and I reviewed it. I'm happy to walk through any part of the code.
