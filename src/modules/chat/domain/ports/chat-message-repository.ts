@@ -13,8 +13,6 @@ export interface ChatMessageRepository {
   insert(message: ChatMessage): Promise<void>;
   save(message: ChatMessage): Promise<void>;
   findById(id: string): Promise<ChatMessage | null>;
-  /** `SELECT … FOR UPDATE SKIP LOCKED`; null when missing or locked by someone else. */
-  lockById(id: string): Promise<ChatMessage | null>;
   listByUser(userId: string, page: PageRequest): Promise<Page<ChatMessage>>;
   listAll(filter: { userId?: string }, page: PageRequest): Promise<Page<ChatMessage>>;
   findStalePending(olderThan: Date, limit: number): Promise<ChatMessage[]>;

@@ -79,16 +79,6 @@ export class DrizzleChatMessageRepository implements ChatMessageRepository {
     return row ? toEntity(row) : null;
   }
 
-  async lockById(id: string): Promise<ChatMessage | null> {
-    const [row] = await this.ctx
-      .executor()
-      .select()
-      .from(chatMessages)
-      .where(eq(chatMessages.id, id))
-      .for('update', { skipLocked: true });
-    return row ? toEntity(row) : null;
-  }
-
   listByUser(userId: string, page: PageRequest): Promise<Page<ChatMessage>> {
     return this.list({ userId }, page);
   }

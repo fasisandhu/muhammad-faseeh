@@ -1,6 +1,7 @@
 import type { Actor } from '../../../shared/domain/actor.js';
 import { ForbiddenError } from '../../../shared/domain/errors.js';
 import { ChatMessage } from '../domain/entities/chat-message.js';
+import type { MonthlyUsage } from '../domain/entities/monthly-usage.js';
 import { ChatRequestAbortedError, LlmTimeoutError, LlmUnavailableError } from '../domain/errors.js';
 import { ChatAccessPolicy } from '../domain/policies/chat-access-policy.js';
 import type { LlmClient, LlmCompletion } from '../domain/ports/llm-client.js';
@@ -87,7 +88,13 @@ export class AskQuestion {
       throw failure.error;
     }
 
-    const stored = await this.finalize(message, completion);
+    const stored = await this.finalize(message, completion, input.signal);
+    if (input.signal.aborted) {
+      // The deadline fired (a 503 is already out) or the client left just after the answer was committed.
+      // The answer is in the history and the charge stands; nobody is waiting for the quota summary.
+      this.deps.logger.warn({ messageId: stored.id }, 'answer stored after the request was cancelled');
+      throw abortReason(input.signal);
+    }
     return { message: stored, quota: await this.deps.usageQuery.execute(input.actor) };
   }
 
@@ -114,14 +121,24 @@ export class AskQuestion {
   /**
    * Re-reads the reservation under the usage-row lock: the sweeper may have abandoned (and refunded) it while the
    * model was working. In that case nothing is overwritten and the quota stays refunded.
+   *
+   * The request deadline (or a client disconnect) can also fire while this waits for the lock. The client then
+   * already has a 503 or is gone, so the answer is not stored: the charge is refunded and the message marked
+   * FAILED in this same transaction, exactly as `compensate` does.
    */
-  private finalize(message: ChatMessage, completion: LlmCompletion): Promise<ChatMessage> {
-    return this.deps.tx.run(async () => {
+  private async finalize(
+    message: ChatMessage,
+    completion: LlmCompletion,
+    signal: AbortSignal,
+  ): Promise<ChatMessage> {
+    const outcome = await this.deps.tx.run(async () => {
       const now = this.deps.clock.now();
       const usage = await this.deps.usage.lockForUpdate(message.userId, message.charge.period);
       const current = await this.deps.messages.findById(message.id);
-      if (current?.status !== 'PENDING') {
-        throw new ChatRequestAbortedError('reservation expired before the answer was stored');
+      if (current?.status !== 'PENDING') return { kind: 'expired' } as const;
+      if (signal.aborted) {
+        await this.refundAndFail(usage, current, 'REQUEST_ABORTED', now);
+        return { kind: 'aborted' } as const;
       }
       usage.addTokens(completion.usage.totalTokens);
       await this.deps.usage.save(usage);
@@ -132,8 +149,20 @@ export class AskQuestion {
         completedAt: now,
       });
       await this.deps.messages.save(current);
-      return current;
+      return { kind: 'stored', message: current } as const;
     });
+    switch (outcome.kind) {
+      case 'stored':
+        return outcome.message;
+      case 'expired':
+        throw new ChatRequestAbortedError('reservation expired before the answer was stored');
+      case 'aborted':
+        this.deps.logger.warn(
+          { messageId: message.id, failureCode: 'REQUEST_ABORTED' },
+          'quota refunded: the request was cancelled before the answer was stored',
+        );
+        throw new ChatRequestAbortedError('request deadline exceeded or client disconnected');
+    }
   }
 
   /**
@@ -146,19 +175,7 @@ export class AskQuestion {
       const usage = await this.deps.usage.lockForUpdate(message.userId, message.charge.period);
       const current = await this.deps.messages.findById(message.id);
       if (current?.status !== 'PENDING') return false;
-      usage.refund(current.charge);
-      await this.deps.usage.save(usage);
-      if (current.charge.kind === 'BUNDLE') {
-        await this.deps.bundles.refund(
-          {
-            subscriptionId: current.charge.subscriptionId,
-            bundlePeriodStart: current.charge.bundlePeriodStart,
-          },
-          now,
-        );
-      }
-      current.fail(failureCode, now);
-      await this.deps.messages.save(current);
+      await this.refundAndFail(usage, current, failureCode, now);
       return true;
     });
     if (refunded) {
@@ -172,5 +189,27 @@ export class AskQuestion {
         'reservation already settled; nothing to refund',
       );
     }
+  }
+
+  /** Reverses exactly the recorded charge and fails the message. Runs inside the caller's transaction. */
+  private async refundAndFail(
+    usage: MonthlyUsage,
+    current: ChatMessage,
+    failureCode: string,
+    now: Date,
+  ): Promise<void> {
+    usage.refund(current.charge);
+    await this.deps.usage.save(usage);
+    if (current.charge.kind === 'BUNDLE') {
+      await this.deps.bundles.refund(
+        {
+          subscriptionId: current.charge.subscriptionId,
+          bundlePeriodStart: current.charge.bundlePeriodStart,
+        },
+        now,
+      );
+    }
+    current.fail(failureCode, now);
+    await this.deps.messages.save(current);
   }
 }
