@@ -1,4 +1,4 @@
-import { calculateJwkThumbprint, decodeJwt } from 'jose';
+import { SignJWT, calculateJwkThumbprint, decodeJwt, exportJWK, generateKeyPair } from 'jose';
 import { DEFAULT_OIDC, discover, generateDpopKeyPair } from '../cli/oidc.js';
 import { headlessLogin } from '../cli/headless-login.js';
 
@@ -41,10 +41,17 @@ for (const account of accounts) {
   console.log(`  info  claims: ${JSON.stringify(claims)}`);
 }
 
-// The password grant must be disabled for the public client.
-const passwordGrant = await fetch(`${DEFAULT_OIDC.issuer}/protocol/openid-connect/token`, {
+// The password grant must be disabled for the public client. The request carries a valid DPoP proof so
+// that Keycloak gets past the DPoP requirement and rejects it for the real reason (direct access grants off).
+const tokenEndpoint = `${DEFAULT_OIDC.issuer}/protocol/openid-connect/token`;
+const probeKeys = await generateKeyPair('ES256');
+const probeProof = await new SignJWT({ htm: 'POST', htu: tokenEndpoint, jti: crypto.randomUUID() })
+  .setProtectedHeader({ alg: 'ES256', typ: 'dpop+jwt', jwk: await exportJWK(probeKeys.publicKey) })
+  .setIssuedAt()
+  .sign(probeKeys.privateKey);
+const passwordGrant = await fetch(tokenEndpoint, {
   method: 'POST',
-  headers: { 'content-type': 'application/x-www-form-urlencoded' },
+  headers: { 'content-type': 'application/x-www-form-urlencoded', DPoP: probeProof },
   body: new URLSearchParams({
     grant_type: 'password',
     client_id: DEFAULT_OIDC.clientId,
@@ -52,9 +59,12 @@ const passwordGrant = await fetch(`${DEFAULT_OIDC.issuer}/protocol/openid-connec
     password: 'Alice-Demo-Pass-2026!',
   }),
 });
-const passwordGrantRejected = passwordGrant.status >= 400;
+const passwordGrantBody: unknown = await passwordGrant.json().catch(() => null);
+const passwordGrantError = isRecord(passwordGrantBody) ? passwordGrantBody.error : undefined;
+const passwordGrantRejected = passwordGrant.status === 400 && passwordGrantError === 'unauthorized_client';
 console.log(
-  `\n  ${passwordGrantRejected ? 'PASS' : 'FAIL'}  password grant is rejected (HTTP ${passwordGrant.status})`,
+  `
+  ${passwordGrantRejected ? 'PASS' : 'FAIL'}  password grant is rejected as unauthorized_client (HTTP ${passwordGrant.status}, error ${String(passwordGrantError)})`,
 );
 if (!passwordGrantRejected) failures += 1;
 

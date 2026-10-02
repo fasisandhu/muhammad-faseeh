@@ -89,7 +89,7 @@
       "displayName": "GitHub",
       "providerId": "github",
       "enabled": true,
-      "trustEmail": true,
+      "trustEmail": false,
       "storeToken": false,
       "firstBrokerLoginFlowAlias": "first broker login",
       "config": {
