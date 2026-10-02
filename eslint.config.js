@@ -39,8 +39,12 @@ const layerZones = [
       './src/shared/application/**',
       './src/shared/infrastructure/**',
       './src/shared/http/**',
+      './src/modules/*/index.ts',
+      './src/modules/*/*.module.ts',
+      './src/*.ts',
     ],
-    message: 'Domain code must not depend on application, infrastructure or transport layers.',
+    message:
+      'Domain code must not depend on application, infrastructure or transport layers, other modules, or composition roots.',
   },
   {
     target: './src/shared/domain/**',
@@ -60,8 +64,10 @@ const layerZones = [
       './src/modules/*/controllers/**',
       './src/shared/infrastructure/**',
       './src/shared/http/**',
+      './src/modules/*/*.module.ts',
+      './src/*.ts',
     ],
-    message: 'Use cases depend on domain ports, never on adapters or transport.',
+    message: 'Use cases depend on domain ports, never on adapters, transport or composition roots.',
   },
   {
     target: './src/shared/application/**',
