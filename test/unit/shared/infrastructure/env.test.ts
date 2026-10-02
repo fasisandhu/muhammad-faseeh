@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { ConfigError, loadConfig } from '../../../../src/shared/infrastructure/config/env.js';
 
@@ -80,5 +81,12 @@ describe('loadConfig', () => {
 
   it('reports missing required variables by name', () => {
     expect(() => loadConfig({})).toThrow(/DATABASE_URL/);
+  });
+});
+
+describe('.env.example', () => {
+  it('ends with a newline, so `echo X=1 >> .env` cannot corrupt the last variable', () => {
+    const example = readFileSync(new URL('../../../../.env.example', import.meta.url), 'utf8');
+    expect(example.endsWith('\n')).toBe(true);
   });
 });
