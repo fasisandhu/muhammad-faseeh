@@ -2,6 +2,7 @@ import type { Express } from 'express';
 import type { Redis } from 'ioredis';
 import type { Logger } from 'pino';
 import { createApp } from './app.js';
+import { createAdminModule } from './modules/admin/index.js';
 import { createIdentityModule } from './modules/identity/index.js';
 import { createSubscriptionsModule } from './modules/subscriptions/index.js';
 import type { Job } from './shared/application/jobs.js';
@@ -76,12 +77,13 @@ export async function buildContainer(
     random: paymentRandom,
     logger,
   });
+  const admin = createAdminModule({ subscriptions });
   // Placeholder until the chat module consumes it (Task 12).
   /* eslint-disable @typescript-eslint/no-meaningless-void-operator */
   void llmRandom;
   /* eslint-enable @typescript-eslint/no-meaningless-void-operator */
-  const routes = [...identity.routes, ...subscriptions.routes];
-  const jobs: Job[] = [];
+  const routes = [...identity.routes, ...subscriptions.routes, ...admin.routes];
+  const jobs: Job[] = [...subscriptions.jobs];
 
   const app = createApp({
     config,

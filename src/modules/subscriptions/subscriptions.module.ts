@@ -1,3 +1,4 @@
+import type { Job } from '../../shared/application/jobs.js';
 import type { Logger } from '../../shared/application/logger.js';
 import type { Clock } from '../../shared/domain/clock.js';
 import type { IdGenerator } from '../../shared/domain/ids.js';
@@ -12,6 +13,7 @@ import { GetSubscriptionMetrics } from './application/get-subscription-metrics.j
 import { GetSubscription } from './application/get-subscription.js';
 import { ListAllSubscriptions } from './application/list-all-subscriptions.js';
 import { ListMySubscriptions } from './application/list-my-subscriptions.js';
+import { RunBillingCycle } from './application/run-billing-cycle.js';
 import { SetAutoRenew } from './application/set-auto-renew.js';
 import { subscriptionRoutes } from './controllers/subscription-routes.js';
 import { SimulatedPaymentGateway } from './infrastructure/simulated-payment-gateway.js';
@@ -31,6 +33,8 @@ export interface SubscriptionsModule {
   routes: Route[];
   bundleQuota: BundleQuotaService;
   queries: { metrics: GetSubscriptionMetrics; listAll: ListAllSubscriptions };
+  billing: RunBillingCycle;
+  jobs: Job[];
 }
 
 export function createSubscriptionsModule(deps: SubscriptionsModuleDeps): SubscriptionsModule {
@@ -52,6 +56,7 @@ export function createSubscriptionsModule(deps: SubscriptionsModuleDeps): Subscr
     ids: deps.ids,
     logger: deps.logger,
   };
+  const billing = new RunBillingCycle({ ...common, maxPerRun: deps.config.jobs.billingMaxPerRun });
   return {
     routes: subscriptionRoutes({
       create: new CreateSubscription(common),
@@ -65,5 +70,7 @@ export function createSubscriptionsModule(deps: SubscriptionsModuleDeps): Subscr
       metrics: new GetSubscriptionMetrics({ subscriptions, payments, clock: deps.clock }),
       listAll: new ListAllSubscriptions(subscriptions),
     },
+    billing,
+    jobs: [{ name: 'billing', run: () => billing.execute() }],
   };
 }
