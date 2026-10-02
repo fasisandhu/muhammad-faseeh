@@ -79,7 +79,9 @@ export class JoseDpopProofVerifier implements ProofVerifier {
     const jkt = await calculateJwkThumbprint(jwk, 'sha256');
     if (jkt !== input.expectedJkt) fail('proof key does not match the token binding (cnf.jkt)');
 
-    const ttlMs = (this.options.maxAgeSec + this.options.clockSkewSec) * 1000;
+    // The entry must outlive the proof's own acceptance window (iat + maxAge), which for a proof dated in the near
+    // future is longer than maxAge from now; the extra 2 s covers sub-second truncation of "now".
+    const ttlMs = Math.max(1000, (iat + this.options.maxAgeSec - nowSec + 2) * 1000);
     const fresh = await this.options.replayCache.markIfUnseen(`${jkt}:${jti}`, ttlMs);
     if (!fresh) fail('proof was replayed (jti already used)');
 

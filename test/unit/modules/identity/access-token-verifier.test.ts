@@ -1,3 +1,5 @@
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { base64url, createRemoteJWKSet } from 'jose';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { DependencyUnavailableError } from '../../../../src/shared/domain/errors.js';
@@ -92,6 +94,15 @@ describe('JoseAccessTokenVerifier', () => {
     await rejectsWith(await idp.issueAccessToken({ subject: 'a', now, jkt: 't', claims: { nbf } }));
   });
 
+  it('rejects an iat in the future beyond the clock tolerance but accepts it within', async () => {
+    const nowSec = Math.floor(now.getTime() / 1000);
+    const within = await idp.issueAccessToken({ subject: 'a', now, jkt: 't', claims: { iat: nowSec + 5 } });
+    await expect(verifier.verify(within, now)).resolves.toBeDefined();
+    const beyond = await idp.issueAccessToken({ subject: 'a', now, jkt: 't', claims: { iat: nowSec + 6 } });
+    const error = await rejectsWith(beyond);
+    expect(error.reason).toMatch(/iat/);
+  });
+
   it('rejects forged signatures', async () => {
     await rejectsWith(await idp.issueAccessToken({ subject: 'a', now, jkt: 't', signer: 'rogue' }));
   });
@@ -162,6 +173,28 @@ describe('JoseAccessTokenVerifier', () => {
         await idp.stop();
       }
       await expect(remote(uri).verify(token, now)).rejects.toBeInstanceOf(DependencyUnavailableError);
+    });
+
+    it('reports a 200 response with a non-JSON body as a dependency failure', async () => {
+      const server = createServer((_req, res) => {
+        res.writeHead(200, { 'content-type': 'text/html' }).end('<html>maintenance</html>');
+      });
+      await new Promise<void>((resolve) => {
+        server.listen(0, '127.0.0.1', resolve);
+      });
+      try {
+        const { port } = server.address() as AddressInfo;
+        const token = await idp.issueAccessToken({ subject: 'alice', now, jkt: 't' });
+        await expect(
+          remote(`http://127.0.0.1:${String(port)}/certs`).verify(token, now),
+        ).rejects.toBeInstanceOf(DependencyUnavailableError);
+      } finally {
+        await new Promise<void>((resolve) => {
+          server.close(() => {
+            resolve();
+          });
+        });
+      }
     });
   });
 });

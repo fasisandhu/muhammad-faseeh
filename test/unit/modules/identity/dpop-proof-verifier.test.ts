@@ -15,6 +15,21 @@ beforeAll(async () => {
   client = await DpopTestClient.create();
 });
 
+/** Honours the TTL it is given, measured against an injectable clock, like the Redis implementation. */
+class TtlReplayCache implements ReplayCache {
+  private readonly expiries = new Map<string, number>();
+
+  constructor(private readonly clock: () => Date) {}
+
+  markIfUnseen(key: string, ttlMs: number): Promise<boolean> {
+    const at = this.clock().getTime();
+    const expiry = this.expiries.get(key);
+    if (expiry !== undefined && expiry > at) return Promise.resolve(false);
+    this.expiries.set(key, at + ttlMs);
+    return Promise.resolve(true);
+  }
+}
+
 const verifier = (replayCache: ReplayCache = new MemoryReplayCache()) =>
   new JoseDpopProofVerifier({
     allowedAlgs: ['ES256', 'RS256', 'PS256', 'EdDSA'],
@@ -69,13 +84,41 @@ describe('JoseDpopProofVerifier', () => {
     ['jti too long', { jti: 'x'.repeat(257) }],
     ['stale iat', { iatOffsetSec: -61 }],
     ['future iat beyond skew', { iatOffsetSec: 6 }],
-    ['private key in header', { embedPrivateKey: true }],
     ['signature by another key', { signWithOtherKey: true }],
     ['other method', { method: 'GET' }],
     ['other URL', { url: 'http://api.test/api/v1/subscriptions' }],
     ['other host', { url: 'http://evil.test/api/v1/chat/messages' }],
   ] satisfies [string, Partial<ProofOptions>][])('rejects %s', async (_name, options) => {
     await rejects(verifier().verify(input(await sign(options))));
+  });
+
+  it('rejects a private key in the header and says why', async () => {
+    const error = await rejects(verifier().verify(input(await sign({ embedPrivateKey: true }))));
+    expect(error.reason).toMatch(/private key material/);
+  });
+
+  it('accepts the exact boundaries: iat at -60 s and +5 s, jti of 256 characters', async () => {
+    await expect(verifier().verify(input(await sign({ iatOffsetSec: -60 })))).resolves.toBeDefined();
+    await expect(verifier().verify(input(await sign({ iatOffsetSec: 5 })))).resolves.toBeDefined();
+    await expect(verifier().verify(input(await sign({ jti: 'x'.repeat(256) })))).resolves.toBeDefined();
+  });
+
+  it('does not spend the jti when a later check fails', async () => {
+    const shared = verifier();
+    await rejects(shared.verify(input(await sign({ jti: 'X' }), { accessToken: 'another.token.value' })));
+    await rejects(shared.verify(input(await sign({ jti: 'X' }), { expectedJkt: 'someone-elses' })));
+    await expect(shared.verify(input(await sign({ jti: 'X' })))).resolves.toBeDefined();
+  });
+
+  it('keeps a proof dated in the near future un-replayable until it is stale', async () => {
+    let clock = now;
+    const cache = new TtlReplayCache(() => clock);
+    const shared = verifier(cache);
+    const proof = await sign({ iatOffsetSec: 5 });
+    await shared.verify(input(proof));
+    clock = new Date(now.getTime() + 65_500);
+    // Either outcome is a rejection: replay while the cache entry lives, or stale once iat + maxAge has passed.
+    await rejects(shared.verify(input(proof, { now: clock })));
   });
 
   it('accepts iat within the future skew', async () => {

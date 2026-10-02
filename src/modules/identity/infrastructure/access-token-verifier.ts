@@ -19,24 +19,47 @@ export interface AccessTokenVerifierOptions {
 const optionalString = (value: unknown): string | null =>
   typeof value === 'string' && value.length > 0 ? value : null;
 
+/** Raised by the key-lookup wrapper when the key source itself failed (as opposed to the token being unacceptable). */
+class KeySourceFailure extends Error {
+  constructor(readonly original: unknown) {
+    super('key source failure');
+  }
+}
+
 /**
- * Separates "the IdP's JWKS endpoint failed" from "the token is bad". jose reports a timeout as JWKSTimeout, a non-200
- * answer as a generic JOSEError, an unparsable key set as JWKSInvalid, and a network failure as the TypeError thrown by
- * fetch. Everything else (including TypeErrors raised while parsing a malformed token) is the caller's fault.
+ * Key-selection errors that are caused by the token (unknown kid, unsupported or disallowed algorithm, malformed JWS).
+ * Anything else the key getter throws (timeout, network failure, non-200 or non-JSON answer, invalid key set) means the
+ * IdP's key endpoint is broken, which is not the caller's fault.
  */
-function isJwksFetchFailure(error: unknown): boolean {
-  if (error instanceof errors.JWKSTimeout || error instanceof errors.JWKSInvalid) return true;
-  if (error instanceof errors.JOSEError) return error.message.startsWith('Expected 200 OK');
-  return error instanceof TypeError && error.message === 'fetch failed';
+const isTokenCausedKeyError = (error: unknown): boolean =>
+  error instanceof errors.JWKSNoMatchingKey ||
+  error instanceof errors.JWKSMultipleMatchingKeys ||
+  error instanceof errors.JOSENotSupported ||
+  error instanceof errors.JWSInvalid ||
+  error instanceof errors.JOSEAlgNotAllowed;
+
+function tagKeySourceFailures(keys: JWTVerifyGetKey): JWTVerifyGetKey {
+  return async (protectedHeader, token) => {
+    try {
+      return await keys(protectedHeader, token);
+    } catch (error) {
+      if (isTokenCausedKeyError(error)) throw error;
+      throw new KeySourceFailure(error);
+    }
+  };
 }
 
 export class JoseAccessTokenVerifier implements AccessTokenVerifier {
-  constructor(private readonly options: AccessTokenVerifierOptions) {}
+  private readonly keys: JWTVerifyGetKey;
+
+  constructor(private readonly options: AccessTokenVerifierOptions) {
+    this.keys = tagKeySourceFailures(options.keys);
+  }
 
   async verify(token: string, now: Date): Promise<VerifiedAccessToken> {
     let payload: JWTPayload;
     try {
-      ({ payload } = await jwtVerify(token, this.options.keys, {
+      ({ payload } = await jwtVerify(token, this.keys, {
         issuer: this.options.issuer,
         audience: this.options.audience,
         algorithms: [...this.options.allowedAlgs],
@@ -45,7 +68,7 @@ export class JoseAccessTokenVerifier implements AccessTokenVerifier {
         requiredClaims: ['sub', 'exp', 'iat'],
       }));
     } catch (error) {
-      if (isJwksFetchFailure(error)) {
+      if (error instanceof KeySourceFailure) {
         // The IdP's key endpoint is unreachable or broken and no cached key matched: not the caller's fault.
         throw new DependencyUnavailableError('identity-provider-jwks');
       }
@@ -53,6 +76,11 @@ export class JoseAccessTokenVerifier implements AccessTokenVerifier {
         throw new AuthenticationError('invalid_token', `${error.code}: ${error.message}`);
       }
       throw new AuthenticationError('invalid_token', `token could not be verified: ${String(error)}`);
+    }
+
+    const nowSec = Math.floor(now.getTime() / 1000);
+    if (typeof payload.iat !== 'number' || payload.iat > nowSec + this.options.clockToleranceSec) {
+      throw new AuthenticationError('invalid_token', 'token iat is in the future');
     }
 
     const cnf = isRecord(payload.cnf) ? payload.cnf : null;
