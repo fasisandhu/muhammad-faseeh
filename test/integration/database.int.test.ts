@@ -76,6 +76,19 @@ describe('DbContext (real Postgres, app role)', () => {
     expect(await countUsers('slow')).toBe(0);
   });
 
+  it('survives an idle pool error and reports it to the callback', async () => {
+    const errors: Error[] = [];
+    const guarded = createDatabase(inject('databaseAppUrl'), 1, (error) => errors.push(error));
+    const unguarded = createDatabase(inject('databaseAppUrl'), 1);
+    try {
+      expect(() => guarded.pool.emit('error', new Error('boom'))).not.toThrow();
+      expect(errors.map((error) => error.message)).toEqual(['boom']);
+      expect(() => unguarded.pool.emit('error', new Error('no listener'))).not.toThrow();
+    } finally {
+      await Promise.all([guarded.close(), unguarded.close()]);
+    }
+  });
+
   it('gives the app role no DELETE privilege', async () => {
     await insertUser('kept');
     await expect(handle.pool.query('DELETE FROM users')).rejects.toMatchObject({ code: '42501' });

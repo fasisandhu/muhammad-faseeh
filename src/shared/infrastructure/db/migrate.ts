@@ -9,6 +9,7 @@ export async function runMigrations(
   migrationsFolder = path.resolve(process.cwd(), 'migrations'),
 ): Promise<void> {
   const pool = new pg.Pool({ connectionString, max: 1 });
+  pool.on('error', () => undefined);
   try {
     await migrate(drizzle({ client: pool }), { migrationsFolder });
   } finally {

@@ -9,7 +9,15 @@ export interface DatabaseHandle {
   close(): Promise<void>;
 }
 
-export function createDatabase(url: string, poolMax: number): DatabaseHandle {
+/**
+ * `onError` receives errors from idle pooled clients (e.g. Postgres restart). A listener is always attached,
+ * because an unhandled pool 'error' event would otherwise crash the process.
+ */
+export function createDatabase(
+  url: string,
+  poolMax: number,
+  onError?: (error: Error) => void,
+): DatabaseHandle {
   const pool = new pg.Pool({
     connectionString: url,
     max: poolMax,
@@ -18,6 +26,9 @@ export function createDatabase(url: string, poolMax: number): DatabaseHandle {
     statement_timeout: 5_000,
     idle_in_transaction_session_timeout: 10_000,
     application_name: 'ggi-api',
+  });
+  pool.on('error', (error) => {
+    onError?.(error);
   });
   const db = drizzle({ client: pool });
   return {
