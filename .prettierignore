@@ -1,0 +1,6 @@
+dist
+coverage
+migrations
+pnpm-lock.yaml
+.ggi-cli
+*.pdf

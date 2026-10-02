@@ -1,0 +1,14 @@
+node_modules/
+dist/
+coverage/
+.env
+.env.*
+!.env.example
+.ggi-cli/
+*.log
+.DS_Store
+# planning/process documents stay outside the repository
+docs/superpowers/
+# fixtures created and removed by test/unit/architecture/layer-rules.test.ts
+src/modules/__layer_fixture__/
+src/modules/__other_fixture__/
