@@ -23,7 +23,8 @@ server.headersTimeout = 15_000;
 server.requestTimeout = 20_000;
 server.keepAliveTimeout = 5_000;
 
-const jobs = new JobRunner(container.jobs, config.jobs.intervalMs, logger);
+// First tick 1 s after start: renewals that fell due while the API was down are not left waiting an interval.
+const jobs = new JobRunner(container.jobs, config.jobs.intervalMs, logger, { initialDelayMs: 1_000 });
 
 server.listen(config.port, () => {
   logger.info({ port: config.port, jobs: config.jobs.enabled }, 'API listening');

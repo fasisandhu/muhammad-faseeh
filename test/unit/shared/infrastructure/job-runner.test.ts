@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { JobRunner } from '../../../../src/shared/infrastructure/jobs/job-runner.js';
 
 const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -49,5 +49,57 @@ describe('JobRunner', () => {
     void runner.tick();
     await runner.stop();
     expect(finished).toBe(true);
+  });
+
+  describe('scheduling', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('runs a first tick shortly after start, then on every interval', async () => {
+      vi.useFakeTimers();
+      const job = { name: 'billing', run: vi.fn().mockResolvedValue(undefined) };
+      const runner = new JobRunner([job], 60_000, logger, { initialDelayMs: 1_000 });
+      runner.start();
+      await vi.advanceTimersByTimeAsync(999);
+      expect(job.run).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(job.run).toHaveBeenCalledOnce();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(job.run).toHaveBeenCalledTimes(2);
+      await runner.stop();
+    });
+
+    it('never starts the first tick after stop', async () => {
+      vi.useFakeTimers();
+      const job = { name: 'billing', run: vi.fn().mockResolvedValue(undefined) };
+      const runner = new JobRunner([job], 60_000, logger, { initialDelayMs: 1_000 });
+      runner.start();
+      await runner.stop();
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(job.run).not.toHaveBeenCalled();
+    });
+
+    it('waits for an in-flight first tick on stop', async () => {
+      vi.useFakeTimers();
+      let finished = false;
+      const job = {
+        name: 'billing',
+        run: () =>
+          new Promise<void>((resolve) =>
+            setTimeout(() => {
+              finished = true;
+              resolve();
+            }, 500),
+          ),
+      };
+      const runner = new JobRunner([job], 60_000, logger, { initialDelayMs: 1_000 });
+      runner.start();
+      await vi.advanceTimersByTimeAsync(1_000);
+      const stopped = runner.stop();
+      await vi.advanceTimersByTimeAsync(600);
+      await stopped;
+      expect(finished).toBe(true);
+    });
   });
 });

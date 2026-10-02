@@ -314,7 +314,7 @@ One JSON log line per request:
 }
 ```
 
-`Authorization`, `DPoP`, `X-Health-Token` and cookie headers never appear in logs, and query strings are dropped from the logged URL. `/health/live` and `/health/ready` (database and Redis) serve probes; `GET /api/v1/admin/metrics` reports messages (free/paid/failed), tokens, active users, subscriptions by tier/cycle/status and this month's payments. Billing renewals and the reservation sweeper run in-process every minute (`JOBS_INTERVAL_MS`); admins can trigger billing with `POST /api/v1/admin/billing-runs`.
+`Authorization`, `DPoP`, `X-Health-Token` and cookie headers never appear in logs, and query strings are dropped from the logged URL. `/health/live` and `/health/ready` (database and Redis) serve probes; `GET /api/v1/admin/metrics` reports messages (free/paid/failed), tokens, active users, subscriptions by tier/cycle/status and this month's payments. Billing renewals and the reservation sweeper run in-process about a second after startup and then every minute (`JOBS_INTERVAL_MS`); admins can trigger billing with `POST /api/v1/admin/billing-runs`.
 
 ### Run the API outside Docker
 
