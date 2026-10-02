@@ -81,11 +81,17 @@ describe('admin API', () => {
     await alice.post('/api/v1/subscriptions', { tier: 'BASIC', billingCycle: 'MONTHLY', autoRenew: true });
     const all = await admin.get('/api/v1/admin/chat/messages');
     expect(listOf(all)).toHaveLength(2);
+    const aliceId = (dataOf(await alice.get('/api/v1/auth/me')) as { userId: string }).userId;
     const bobId = (dataOf(await bob.get('/api/v1/auth/me')) as { userId: string }).userId;
+    // Each item names its owner, so an unfiltered system-wide listing is still attributable.
+    expect(listOf(all).map((m) => `${String(m.userId)} ${String(m.question)}`)).toEqual(
+      expect.arrayContaining([`${aliceId} from alice`, `${bobId} from bob`]),
+    );
     const onlyBob = await admin.get(`/api/v1/admin/chat/messages?userId=${bobId}`);
     expect(listOf(onlyBob).map((m) => m.question)).toEqual(['from bob']);
     const subs = await admin.get('/api/v1/admin/subscriptions?status=ACTIVE');
     expect(listOf(subs)).toHaveLength(1);
+    expect(listOf(subs)[0]).toMatchObject({ userId: aliceId, tier: 'BASIC' });
     expect((await admin.get('/api/v1/admin/chat/messages?userId=not-a-uuid')).status).toBe(400);
   });
 });

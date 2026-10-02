@@ -212,22 +212,22 @@ TLS everywhere (HSTS is already sent); Keycloak in production mode (`start` inst
 
 Base URL `http://localhost:3000/api/v1`. Success: `{ "data": … }`; lists: `{ "data": [...], "page": { "limit", "nextCursor" } }` (`?limit=1..100&cursor=…`, default limit 20).
 
-| Method & path                                                | Roles                                              | Purpose                                                                |
-| ------------------------------------------------------------ | -------------------------------------------------- | ---------------------------------------------------------------------- |
-| `GET /auth/me`                                               | user, admin                                        | principal and token binding                                            |
-| `POST /auth/logout`                                          | user, admin                                        | revoke the session (204)                                               |
-| `POST /chat/messages` `{ question }`                         | user, admin                                        | ask; 201 with answer, token usage, remaining quota                     |
-| `GET /chat/messages` · `GET /chat/messages/:id`              | user, admin (list: own; by id: owner or any admin) | history                                                                |
-| `GET /chat/usage`                                            | user, admin                                        | free quota, paid usage, bundles                                        |
-| `GET /subscription-plans`                                    | user, admin                                        | catalog                                                                |
-| `POST /subscriptions` `{ tier, billingCycle, autoRenew }`    | user, admin                                        | buy (201, or 402 if declined)                                          |
-| `GET /subscriptions` (`?status=`) · `GET /subscriptions/:id` | user, admin (list: own; by id: owner or any admin) | read                                                                   |
-| `PATCH /subscriptions/:id` `{ autoRenew }`                   | user, admin (owner or any admin)                   | toggle renewal                                                         |
-| `POST /subscriptions/:id/cancellation`                       | user, admin (owner or any admin)                   | cancel now                                                             |
-| `GET /admin/metrics`                                         | admin                                              | usage, subscriptions, payments                                         |
-| `GET /admin/chat/messages` · `GET /admin/subscriptions`      | admin                                              | system-wide listings (`?userId=` on both, `?status=` on subscriptions) |
-| `POST /admin/billing-runs`                                   | admin                                              | process renewals and expiries now                                      |
-| `GET /health/live` · `GET /health/ready`                     | `X-Health-Token`                                   | probes                                                                 |
+| Method & path                                                | Roles                                              | Purpose                                                                                                |
+| ------------------------------------------------------------ | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `GET /auth/me`                                               | user, admin                                        | principal and token binding                                                                            |
+| `POST /auth/logout`                                          | user, admin                                        | revoke the session (204)                                                                               |
+| `POST /chat/messages` `{ question }`                         | user, admin                                        | ask; 201 with answer, token usage, remaining quota                                                     |
+| `GET /chat/messages` · `GET /chat/messages/:id`              | user, admin (list: own; by id: owner or any admin) | history                                                                                                |
+| `GET /chat/usage`                                            | user, admin                                        | free quota, paid usage, bundles                                                                        |
+| `GET /subscription-plans`                                    | user, admin                                        | catalog                                                                                                |
+| `POST /subscriptions` `{ tier, billingCycle, autoRenew }`    | user, admin                                        | buy (201, or 402 if declined)                                                                          |
+| `GET /subscriptions` (`?status=`) · `GET /subscriptions/:id` | user, admin (list: own; by id: owner or any admin) | read                                                                                                   |
+| `PATCH /subscriptions/:id` `{ autoRenew }`                   | user, admin (owner or any admin)                   | toggle renewal                                                                                         |
+| `POST /subscriptions/:id/cancellation`                       | user, admin (owner or any admin)                   | cancel now                                                                                             |
+| `GET /admin/metrics`                                         | admin                                              | usage, subscriptions, payments                                                                         |
+| `GET /admin/chat/messages` · `GET /admin/subscriptions`      | admin                                              | system-wide listings; each item carries its `userId` (`?userId=` on both, `?status=` on subscriptions) |
+| `POST /admin/billing-runs`                                   | admin                                              | process renewals and expiries now                                                                      |
+| `GET /health/live` · `GET /health/ready`                     | `X-Health-Token`                                   | probes                                                                                                 |
 
 Errors are `application/problem+json`:
 

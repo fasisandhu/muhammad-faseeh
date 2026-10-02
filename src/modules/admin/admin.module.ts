@@ -23,8 +23,9 @@ export function createAdminModule(deps: AdminModuleDeps): { routes: Route[] } {
       }),
       listMessages: deps.chat.queries.listAll,
       listSubscriptions: deps.subscriptions.queries.listAll,
-      messageDto,
-      subscriptionDto,
+      // System-wide listings name each row's owner; the user-facing DTOs omit it (it is always the caller).
+      messageDto: (message) => ({ userId: message.userId, ...messageDto(message) }),
+      subscriptionDto: (subscription) => ({ userId: subscription.userId, ...subscriptionDto(subscription) }),
       statusFilter,
     }),
   };
