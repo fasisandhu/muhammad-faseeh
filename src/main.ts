@@ -37,17 +37,31 @@ async function shutdown(signal: string): Promise<void> {
   logger.info({ signal }, 'shutting down');
   const force = setTimeout(() => {
     logger.error({ signal }, 'forced shutdown after 15 s');
+    server.closeAllConnections();
     process.exit(1);
   }, 15_000);
   force.unref();
-  server.close();
-  server.closeIdleConnections();
-  await jobs.stop();
-  await container.close();
-  clearTimeout(force);
-  process.exit(0);
+  try {
+    // Stop accepting connections and let in-flight requests finish before closing Redis and the pool.
+    const closed = new Promise<void>((resolve, reject) => {
+      server.close((error) => {
+        if (error) reject(error);
+        else resolve();
+      });
+    });
+    server.closeIdleConnections();
+    await closed;
+    await jobs.stop();
+    await container.close();
+    clearTimeout(force);
+    process.exit(0);
+  } catch (error) {
+    logger.error({ err: error }, 'shutdown failed');
+    process.exitCode = 1;
+    clearTimeout(force);
+    process.exit(1);
+  }
 }
-
 process.on('SIGTERM', () => void shutdown('SIGTERM'));
 process.on('SIGINT', () => void shutdown('SIGINT'));
 process.on('unhandledRejection', (reason) => {
