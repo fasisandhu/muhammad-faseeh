@@ -11,6 +11,7 @@ import type { Clock } from './shared/domain/clock.js';
 import type { IdGenerator } from './shared/domain/ids.js';
 import type { RandomSource } from './shared/domain/random.js';
 import { createRateLimiters } from './shared/http/rate-limit.js';
+import type { Route } from './shared/http/routing.js';
 import type { AppConfig } from './shared/infrastructure/config/env.js';
 import { createDatabase, type DatabaseHandle } from './shared/infrastructure/db/client.js';
 import { DbContext } from './shared/infrastructure/db/context.js';
@@ -37,6 +38,7 @@ export interface Container {
   database: DatabaseHandle;
   db: DbContext;
   redis: Redis;
+  routes: readonly Route[];
   jobs: Job[];
   close(): Promise<void>;
 }
@@ -79,7 +81,6 @@ export async function buildContainer(
     random: paymentRandom,
     logger,
   });
-  const admin = createAdminModule({ subscriptions });
   // chat → subscriptions dependency is a structural port: chat never imports the subscriptions module.
   const chat = createChatModule({
     config,
@@ -91,7 +92,8 @@ export async function buildContainer(
     bundles: subscriptions.bundleQuota,
     llm: overrides.llmClient,
   });
-  const routes = [...identity.routes, ...chat.routes, ...subscriptions.routes, ...admin.routes];
+  const admin = createAdminModule({ subscriptions, chat, clock });
+  const routes: Route[] = [...identity.routes, ...chat.routes, ...subscriptions.routes, ...admin.routes];
   const jobs: Job[] = [...subscriptions.jobs, ...chat.jobs];
 
   const app = createApp({
@@ -115,6 +117,7 @@ export async function buildContainer(
     database,
     db,
     redis,
+    routes,
     jobs,
     close: async () => {
       redis.disconnect();
