@@ -154,6 +154,7 @@ export default defineConfig(
       ],
       '@typescript-eslint/consistent-type-imports': ['error', { fixStyle: 'inline-type-imports' }],
       '@typescript-eslint/restrict-template-expressions': ['error', { allowNumber: true }],
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
       'import-x/no-cycle': ['error', { maxDepth: 10 }],
       'import-x/no-restricted-paths': ['error', { zones: [...layerZones, ...crossModuleZones] }],
       'import-x/no-named-as-default-member': 'off',

@@ -1,30 +1,11 @@
-import { Writable } from 'node:stream';
 import { describe, expect, it } from 'vitest';
 import { createLogger } from '../../../../src/shared/infrastructure/logging/logger.js';
 import { requestContext } from '../../../../src/shared/infrastructure/logging/request-context.js';
-
-function capture(): { stream: Writable; lines: () => Record<string, unknown>[] } {
-  const chunks: string[] = [];
-  const stream = new Writable({
-    write(chunk: Buffer, _enc, done) {
-      chunks.push(chunk.toString());
-      done();
-    },
-  });
-  return {
-    stream,
-    lines: () =>
-      chunks
-        .join('')
-        .split('\n')
-        .filter(Boolean)
-        .map((line) => JSON.parse(line) as Record<string, unknown>),
-  };
-}
+import { captureLogs } from '../../../support/log-capture.js';
 
 describe('createLogger', () => {
   it('adds requestId and userId from the request context', () => {
-    const out = capture();
+    const out = captureLogs();
     const logger = createLogger({ level: 'info', pretty: false, destination: out.stream });
     requestContext.run({ requestId: 'req-12345678', userId: 'user-1' }, () => {
       logger.info({ event: 'x' }, 'hello');
@@ -36,7 +17,7 @@ describe('createLogger', () => {
   });
 
   it('redacts credentials in request headers', () => {
-    const out = capture();
+    const out = captureLogs();
     const logger = createLogger({ level: 'info', pretty: false, destination: out.stream });
     logger.info({ req: { headers: { authorization: 'DPoP abc', dpop: 'proof', cookie: 'c=1' } } }, 'req');
     const [line] = out.lines();
