@@ -48,6 +48,18 @@ describe('per-user and per-IP limits per endpoint group', () => {
     expect((await bob.get('/api/v1/chat/usage')).status).toBe(200);
   });
 
+  it('routes case-sensitively, so case variants cannot reach chat outside the chat budget', async () => {
+    const alice = await ctx.login({ sub: 'alice', roles: ['user'] });
+    for (const path of ['/api/v1/CHAT/usage', '/api/V1/chat/usage']) {
+      const variant = await alice.get(path);
+      expect(variant.status, path).toBe(404);
+      expect(variant.body).toMatchObject({ code: 'ROUTE_NOT_FOUND' });
+    }
+    // Both 404s were counted in the auth group, so the full chat budget (3) is still available.
+    for (let i = 0; i < 3; i += 1) expect((await alice.get('/api/v1/chat/usage')).status).toBe(200);
+    expect((await alice.get('/api/v1/chat/usage')).status).toBe(429);
+  });
+
   it('applies the stricter auth-group limits', async () => {
     const alice = await ctx.login({ sub: 'alice', roles: ['user'] });
     expect((await alice.get('/api/v1/auth/me')).status).toBe(200);

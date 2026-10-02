@@ -36,6 +36,8 @@ export function createApp(deps: AppDependencies): Express {
   app.disable('x-powered-by');
   app.set('etag', false);
   app.set('trust proxy', config.trustProxy);
+  // One spelling per path: case variants 404 instead of reaching a handler in another rate-limit group.
+  app.set('case sensitive routing', true);
 
   app.use(requestId());
   app.use(httpLogger(logger));
@@ -49,11 +51,11 @@ export function createApp(deps: AppDependencies): Express {
   app.use('/health', healthRouter({ token: config.health.token, checks: deps.health }));
 
   // Every /api request is authenticated before routing, so unknown paths cannot be probed without credentials.
-  const api = express.Router();
+  const api = express.Router({ caseSensitive: true });
   api.use(groupIpLimiter(deps.rateLimiters, logger));
   api.use(deps.authenticate);
   api.use(groupUserLimiter(deps.rateLimiters, logger));
-  const v1 = express.Router();
+  const v1 = express.Router({ caseSensitive: true });
   mountRoutes(v1, deps.routes);
   api.use('/v1', v1);
   api.use(routeNotFound);

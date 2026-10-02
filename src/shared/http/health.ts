@@ -36,7 +36,7 @@ export function healthRouter(options: {
 }): Router {
   const expected = digest(options.token);
   const probeTimeoutMs = options.probeTimeoutMs ?? 1000;
-  const router = express.Router();
+  const router = express.Router({ caseSensitive: true });
   router.use((req, _res, next) => {
     const provided = digest(req.get('x-health-token') ?? '');
     next(
