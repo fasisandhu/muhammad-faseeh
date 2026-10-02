@@ -9,6 +9,7 @@ import { createErrorHandler } from './shared/http/error-handler.js';
 import { healthRouter, type HealthChecks } from './shared/http/health.js';
 import { httpLogger } from './shared/http/http-logger.js';
 import { routeNotFound } from './shared/http/not-found.js';
+import { globalIpLimiter, type RateLimiterSet } from './shared/http/rate-limit.js';
 import { requestId } from './shared/http/request-id.js';
 import { securityHeaders } from './shared/http/security-headers.js';
 import { requestTimeout } from './shared/http/timeout.js';
@@ -17,6 +18,7 @@ export interface AppDependencies {
   config: AppConfig;
   logger: Logger;
   health: HealthChecks;
+  rateLimiters: RateLimiterSet;
 }
 
 /** Builds the Express app. The middleware order below is the security pipeline from spec §9.1. */
@@ -31,6 +33,7 @@ export function createApp(deps: AppDependencies): Express {
   app.use(httpLogger(logger));
   app.use(securityHeaders());
   app.use(corsPolicy(config.corsAllowedOrigins));
+  app.use(globalIpLimiter(deps.rateLimiters, logger));
   app.use(requestTimeout(config.http.requestTimeoutMs));
   app.use(contentNegotiation({ maxUrlLength: config.http.maxUrlLength }));
   app.use(jsonBody(config.http.bodyLimitBytes));
