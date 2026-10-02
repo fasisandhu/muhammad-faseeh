@@ -6,7 +6,7 @@ TypeScript (strict) · Express 5 · Domain-Driven Design · PostgreSQL 17 · Red
 
 Backend for the GGI "Backend Test Posture" assessment ([PDF](docs/GGI%20-%20Backend%20Test%20Posture.pdf)): an AI chat endpoint with a mocked OpenAI model, monthly free quota and paid subscription bundles, simulated billing, and a security-first request pipeline. **Every endpoint is protected**; a stolen access token alone cannot call the API.
 
-- [Quick start](#quick-start) · [Requirements → code](#requirements--code) · [Architecture](#architecture) · [Domain rules](#domain-rules-and-interpretations) · [Security model](#security-model) · [API](#api-reference) · [Testing](#testing) · [Operations](#running-and-operating)
+- [Quick start](#quick-start) · [Requirements → code](#requirements--code) · [Architecture](#architecture) · [Domain rules](#domain-rules-and-interpretations) · [Security model](#security-model) · [API](#api-reference) · [Testing](#testing) · [Operations](#running-and-operating) · [Known limitations](#known-limitations)
 
 ## Quick start
 
@@ -21,7 +21,9 @@ pnpm cli login                  # browser login: alice@example.com / Alice-Demo-
 pnpm cli chat "What is DPoP?"
 ```
 
-> **Replace the placeholders in `.env` before you start the stack.** [.env.example](.env.example) contains placeholders, not secrets. Copied unchanged it gives you a publicly known health/metrics probe token (`HEALTH_CHECK_TOKEN`) and a publicly known Keycloak admin password (`KEYCLOAK_ADMIN_PASSWORD`), plus guessable database and Redis passwords. Generate your own values for every `change-me…` entry; if you change the database or Redis passwords, update the matching passwords inside `DATABASE_URL`, `DATABASE_MIGRATION_URL` and `REDIS_URL` as well. `.env` is git-ignored.
+If port 5432 or 6379 is already in use, set `POSTGRES_HOST_PORT` / `REDIS_HOST_PORT` in `.env` first (see [Port clashes](#port-clashes)).
+
+> **Replace the placeholders in `.env` before you start the stack.** [.env.example](.env.example) contains placeholders, not secrets. Copied unchanged it gives you a publicly known health probe token (`HEALTH_CHECK_TOKEN`, which protects only `/health/*`; metrics require the admin role) and a publicly known Keycloak admin password (`KEYCLOAK_ADMIN_PASSWORD`), plus guessable database and Redis passwords. Generate your own values for every `change-me…` entry; if you change the database or Redis passwords, update the matching passwords inside `DATABASE_URL`, `DATABASE_MIGRATION_URL` and `REDIS_URL` as well. `.env` is git-ignored.
 
 | Demo account (local only) | Password                | Roles       |
 | ------------------------- | ----------------------- | ----------- |
@@ -143,6 +145,10 @@ The PDF leaves some rules open; these are the choices made, all in one place in 
 5. **The first purchase also goes through the simulated payment.** A decline returns `402 PAYMENT_FAILED` and keeps the subscription as `INACTIVE` for the audit trail.
 6. **A failed, timed-out or abandoned model call never consumes quota.**
 7. **Health endpoints require a probe token** (`X-Health-Token`) because the PDF forbids open endpoints.
+8. **Admins are also users.** An admin can chat and subscribe as themselves: every chat and subscription route allows both roles, the free quota and bundles apply to an admin exactly as to anyone else, and those calls count against the chat or subscriptions rate-limit group (the limit follows the path, not the role). The admin role only adds the `/admin/*` routes and read/manage access to other users' records.
+9. **"Authentication endpoints" means `/auth/*`** (`GET /api/v1/auth/me`, `POST /api/v1/auth/logout`), which get the stricter `auth` rate-limit group (20/min per IP, 10/min per user). Interactive login happens on Keycloak's own pages, which are protected by Keycloak's brute-force lockout instead.
+
+**Free text comes back HTML-escaped.** A question is stored and returned sanitised: markup is removed and the remaining text is HTML-escaped, so `5 > 3` is returned as `5 &gt; 3` (the mock answer quotes the question in the same form). The output is therefore safe to insert into any HTML page as it is; clients should not escape it a second time. A client that renders plain text (a terminal, a native text field) should unescape the entities first.
 
 ## Security model
 
@@ -155,7 +161,7 @@ A normal access token is like cash: whoever holds it can spend it. With **DPoP**
 3. Every API call carries the token **and** a one-time proof signed with the private key: _method, URL, time, hash of this token, unique id_.
 4. The API accepts the call only if the proof is valid, fresh (issued at most 60 s ago, and at most 5 s in the future to allow for clock drift), for this exact request, signed by the key the token is bound to, and never seen before.
 
-A thief with the token cannot sign proofs; a captured proof works for one request, once, for one minute.
+A thief with the token cannot sign proofs. A captured proof is no better: a proof is bound to one HTTP method, one URL and this access token, its `jti` is accepted once, and it goes stale after 60 s — so it cannot be replayed or redirected to another request.
 
 ### What the API checks on every `/api` request
 
@@ -179,7 +185,7 @@ Repeated authentication failures from one IP exhaust an auth-failure budget (`42
 | Session hijack after logout                                      | server-side session revocation checked on every request                                                            |
 | Credential stuffing / brute force                                | Keycloak brute-force lockout, password policy; API auth-failure budget per IP                                      |
 | Privilege escalation                                             | roles only from the IdP; controller guard **and** domain policy                                                    |
-| IDOR (reading others' data)                                      | ownership policies; foreign ids return `404`                                                                       |
+| IDOR (reading others' data)                                      | ownership policies; foreign ids return `404` (admins may read and manage any record)                               |
 | Mass assignment                                                  | strict schemas reject unknown fields; price, limits, dates, status are server-derived                              |
 | Stored XSS                                                       | markup stripped and text escaped on input; JSON-only responses; `CSP default-src 'none'`                           |
 | SQL injection                                                    | parameterised queries only; ESLint bans `sql.raw`; ids validated as UUIDs                                          |
@@ -203,6 +209,14 @@ Repeated authentication failures from one IP exhaust an auth-failure budget (`42
 | failed authentications                   | 30 per 15 min | —        |
 
 Responses carry `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`; `429` adds `Retry-After`. Behind a proxy set `TRUST_PROXY` to the hop count so per-IP limits see the real client.
+
+### Prompt injection
+
+- **The model is mocked.** No real model runs, so there is nothing to inject into yet; the design below is what a real integration would keep.
+- **Questions are length-limited and sanitised** before they reach the model: at most 4 000 characters, both raw and after sanitising, with control characters, bidi overrides and markup removed.
+- **User text never gains authority.** The model always receives a fixed `system` prompt, and the question travels as a separate `user` message. It is never concatenated into the system prompt.
+- **Model output is untrusted data.** The answer is stored and returned as a JSON string; it is never executed, never parsed for instructions and never used for authorisation or quota decisions. The mock only quotes the already-escaped question.
+- **A real OpenAI integration would add** output filtering (run the answer through the same sanitiser and a moderation check before storing it), keep the strict system/user role split, and give the model no tools with side effects.
 
 ### Production hardening (beyond this assessment)
 
@@ -274,9 +288,11 @@ pnpm check              # everything CI runs
 
 All ports are bound to `127.0.0.1`. Configuration is environment-only and validated at startup ([env.ts](src/shared/infrastructure/config/env.ts) lists every variable and default; [.env.example](.env.example) has placeholders).
 
-**Port clashes.** If the machine already runs PostgreSQL or Redis locally, set `POSTGRES_HOST_PORT` and/or `REDIS_HOST_PORT` in `.env` (compose publishes `${POSTGRES_HOST_PORT:-5432}` and `${REDIS_HOST_PORT:-6379}`). Containers still talk to each other on the standard ports; only the host side changes. Anything that runs on the host (`pnpm dev` and `pnpm db:migrate`) reaches the databases through the published port, so `DATABASE_URL`, `DATABASE_MIGRATION_URL` and `REDIS_URL` in `.env` must use the same port, for example `POSTGRES_HOST_PORT=5433` together with `…@localhost:5433/ggi`.
-
 **Keycloak is a demo setup.** Compose runs Keycloak with `start-dev` and its embedded H2 database, which is convenient locally and not a production configuration. Production would use `start` with an external PostgreSQL database, TLS and a fixed hostname (see [Production hardening](#production-hardening-beyond-this-assessment)).
+
+### Port clashes
+
+If the machine already runs PostgreSQL or Redis locally, set `POSTGRES_HOST_PORT` and/or `REDIS_HOST_PORT` in `.env` (compose publishes `${POSTGRES_HOST_PORT:-5432}` and `${REDIS_HOST_PORT:-6379}`). Containers still talk to each other on the standard ports; only the host side changes. Anything that runs on the host (`pnpm dev` and `pnpm db:migrate`) reaches the databases through the published port, so `DATABASE_URL`, `DATABASE_MIGRATION_URL` and `REDIS_URL` in `.env` must use the same port, for example `POSTGRES_HOST_PORT=5433` together with `…@localhost:5433/ggi`.
 
 ### GitHub login
 
@@ -316,9 +332,18 @@ One JSON log line per request:
 
 `Authorization`, `DPoP`, `X-Health-Token` and cookie headers never appear in logs, and query strings are dropped from the logged URL. `/health/live` and `/health/ready` (database and Redis) serve probes; `GET /api/v1/admin/metrics` reports messages (free/paid/failed), tokens, active users, subscriptions by tier/cycle/status and this month's payments. Billing renewals and the reservation sweeper run in-process about a second after startup and then every minute (`JOBS_INTERVAL_MS`); admins can trigger billing with `POST /api/v1/admin/billing-runs`.
 
+### Inspecting a real token
+
+`pnpm kc:inspect` logs both demo accounts in against the running Keycloak and prints the decoded claims of each real DPoP-bound access token, checking `cnf.jkt`, `iss`, `aud` and the roles; it also confirms that the password grant is disabled.
+
 ### Run the API outside Docker
 
 `docker compose up -d postgres redis keycloak && pnpm db:migrate && pnpm dev` (uses the "Only for `pnpm dev` outside docker" block of `.env`; keep its host ports in line with `POSTGRES_HOST_PORT` / `REDIS_HOST_PORT`).
+
+## Known limitations
+
+- Paid quota can be briefly unavailable (≤ `JOBS_INTERVAL_MS`) between a bundle's end date and the next billing tick.
+- An admin-triggered billing run of a very large backlog can exceed the HTTP request timeout. The run continues and its summary is logged.
 
 ## Project structure
 
