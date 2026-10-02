@@ -23,6 +23,23 @@ describe('ChatMessage', () => {
     expect(message.answer).toBeNull();
   });
 
+  it('exposes its reservation details through getters', () => {
+    const message = reserve();
+    expect(message).toMatchObject({
+      id: 'm-1',
+      userId: 'u-1',
+      requestId: 'req-12345678',
+      model: null,
+      tokenUsage: null,
+      failureCode: null,
+      completedAt: null,
+      latencyMs: null,
+      createdAt: new Date('2026-10-15T12:00:00.000Z'),
+    });
+    expect(message.question.value).toBe('What is DPoP?');
+    expect(message.charge.period.value).toBe('2026-10');
+  });
+
   it('completes with answer, model, token usage and latency', () => {
     const message = reserve();
     message.complete({
