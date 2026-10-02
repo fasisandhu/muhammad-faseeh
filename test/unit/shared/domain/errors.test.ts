@@ -28,10 +28,12 @@ describe('DomainError', () => {
       action: 'cancel',
     });
     expect(new DependencyUnavailableError('redis').code).toBe('SERVICE_UNAVAILABLE');
+    expect(new DependencyUnavailableError('redis').dependency).toBe('redis');
+    expect(new DependencyUnavailableError('redis').details).toEqual({});
     expect(new ValidationError('question', 'empty').code).toBe('VALIDATION_FAILED');
   });
 
-  it('exposes every error code from the spec exactly once', () => {
+  it('lists every error code exactly once', () => {
     expect(new Set(ERROR_CODES).size).toBe(ERROR_CODES.length);
     expect(ERROR_CODES).toHaveLength(21);
   });

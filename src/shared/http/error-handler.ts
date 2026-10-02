@@ -1,7 +1,12 @@
 import type { ErrorRequestHandler } from 'express';
 import type { Logger } from 'pino';
 import { ZodError } from 'zod';
-import { DomainError, type ErrorCode, type ErrorDetails } from '../domain/errors.js';
+import {
+  DependencyUnavailableError,
+  DomainError,
+  type ErrorCode,
+  type ErrorDetails,
+} from '../domain/errors.js';
 import { isRecord } from '../domain/guards.js';
 import { pathOf } from './path.js';
 import { buildProblem, ERROR_CATALOG, HttpError, sendProblem } from './problem.js';
@@ -36,8 +41,13 @@ function map(error: unknown, dpopAlgs: readonly string[]): Mapped {
     );
   }
   if (error instanceof DomainError) {
+    const details = error.details as ErrorDetails;
     return withDpopChallenge(
-      { code: error.code, detail: error.message, details: error.details as ErrorDetails },
+      {
+        code: error.code,
+        detail: error.message,
+        details: Object.keys(details).length > 0 ? details : undefined,
+      },
       dpopAlgs,
     );
   }
@@ -70,10 +80,18 @@ export function createErrorHandler(
     const mapped = map(error, options.dpopAlgs);
     const status = ERROR_CATALOG[mapped.code].status;
     const reason = isRecord(error) && typeof error.reason === 'string' ? error.reason : undefined;
+    const dependency = error instanceof DependencyUnavailableError ? error.dependency : undefined;
     const level =
       status >= 500 ? 'error' : status === 401 || status === 403 || status === 429 ? 'warn' : 'info';
     logger[level](
-      { err: status >= 500 ? error : undefined, code: mapped.code, status, reason, path: pathOf(req) },
+      {
+        err: status >= 500 ? error : undefined,
+        code: mapped.code,
+        status,
+        reason,
+        dependency,
+        path: pathOf(req),
+      },
       'request rejected',
     );
     if (res.headersSent) return;

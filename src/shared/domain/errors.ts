@@ -55,9 +55,10 @@ export class InvalidStateError extends DomainError<{ entity: string; state: stri
   }
 }
 
-export class DependencyUnavailableError extends DomainError<{ dependency: string }> {
-  constructor(dependency: string) {
-    super('SERVICE_UNAVAILABLE', 'A required dependency is temporarily unavailable.', { dependency });
+/** A backing service failed. `dependency` is for server logs only; clients get a generic 503. */
+export class DependencyUnavailableError extends DomainError<Record<string, never>> {
+  constructor(readonly dependency: string) {
+    super('SERVICE_UNAVAILABLE', 'A required dependency is temporarily unavailable.', {});
   }
 }
 
