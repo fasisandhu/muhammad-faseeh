@@ -76,7 +76,12 @@ export const chatMessages = pgTable(
       'chat_messages_tokens_non_negative',
       sql`coalesce(${t.promptTokens}, 0) >= 0 AND coalesce(${t.completionTokens}, 0) >= 0 AND coalesce(${t.totalTokens}, 0) >= 0`,
     ),
-    index('chat_messages_user_created_idx').on(t.userId, t.createdAt.desc(), t.id.desc()),
+    // DESC NULLS FIRST is what `ORDER BY created_at DESC, id DESC` asks for, so the index can serve the listing.
+    index('chat_messages_user_created_idx').on(
+      t.userId,
+      t.createdAt.desc().nullsFirst(),
+      t.id.desc().nullsFirst(),
+    ),
     index('chat_messages_pending_idx')
       .on(t.createdAt)
       .where(sql`${t.status} = 'PENDING'`),

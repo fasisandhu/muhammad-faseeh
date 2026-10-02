@@ -14,7 +14,9 @@ export class SweepStaleReservations {
     for (const candidate of candidates) {
       const done = await this.deps.tx.run(async () => {
         const usage = await this.deps.usage.lockForUpdate(candidate.userId, candidate.charge.period);
-        const message = await this.deps.messages.lockById(candidate.id);
+        // Plain read, not a row lock: every status change happens under the usage-row lock held above, and
+        // locking chat_messages before subscriptions would break the lock order (spec §4.3).
+        const message = await this.deps.messages.findById(candidate.id);
         if (message?.status !== 'PENDING') return false;
         usage.refund(message.charge);
         await this.deps.usage.save(usage);

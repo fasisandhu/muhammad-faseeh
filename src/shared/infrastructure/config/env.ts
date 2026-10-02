@@ -113,6 +113,14 @@ const EnvSchema = z
         message: 'must be lower than REQUEST_TIMEOUT_MS',
       });
     }
+    if (env.PENDING_MESSAGE_TIMEOUT_SEC * 1000 <= env.REQUEST_TIMEOUT_MS + 5000) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['PENDING_MESSAGE_TIMEOUT_SEC'],
+        message:
+          'PENDING_MESSAGE_TIMEOUT_SEC * 1000 must exceed REQUEST_TIMEOUT_MS + 5000, otherwise the sweeper could refund a reservation whose request is still running',
+      });
+    }
     if (env.MOCK_LLM_MIN_LATENCY_MS > env.MOCK_LLM_MAX_LATENCY_MS) {
       ctx.addIssue({
         code: 'custom',

@@ -87,8 +87,8 @@ export class AskQuestion {
       throw failure.error;
     }
 
-    await this.finalize(message, completion);
-    return { message, quota: await this.deps.usageQuery.execute(input.actor) };
+    const stored = await this.finalize(message, completion);
+    return { message: stored, quota: await this.deps.usageQuery.execute(input.actor) };
   }
 
   private reserve(input: AskQuestionInput): Promise<ChatMessage> {
@@ -111,41 +111,66 @@ export class AskQuestion {
     });
   }
 
-  private async finalize(message: ChatMessage, completion: LlmCompletion): Promise<void> {
-    await this.deps.tx.run(async () => {
+  /**
+   * Re-reads the reservation under the usage-row lock: the sweeper may have abandoned (and refunded) it while the
+   * model was working. In that case nothing is overwritten and the quota stays refunded.
+   */
+  private finalize(message: ChatMessage, completion: LlmCompletion): Promise<ChatMessage> {
+    return this.deps.tx.run(async () => {
       const now = this.deps.clock.now();
       const usage = await this.deps.usage.lockForUpdate(message.userId, message.charge.period);
+      const current = await this.deps.messages.findById(message.id);
+      if (current?.status !== 'PENDING') {
+        throw new ChatRequestAbortedError('reservation expired before the answer was stored');
+      }
       usage.addTokens(completion.usage.totalTokens);
       await this.deps.usage.save(usage);
-      message.complete({
+      current.complete({
         answer: completion.content,
         model: completion.model,
         tokenUsage: completion.usage,
         completedAt: now,
       });
-      await this.deps.messages.save(message);
+      await this.deps.messages.save(current);
+      return current;
     });
   }
 
-  /** Refunds into the period recorded on the charge — even if the month rolled over meanwhile (Review Focus 4). */
+  /**
+   * Refunds into the period recorded on the charge — even if the month rolled over meanwhile (Review Focus 4).
+   * Re-reads the reservation under the usage-row lock and does nothing if the sweeper already refunded it.
+   */
   private async compensate(message: ChatMessage, failureCode: string): Promise<void> {
-    await this.deps.tx.run(async () => {
+    const refunded = await this.deps.tx.run(async () => {
       const now = this.deps.clock.now();
       const usage = await this.deps.usage.lockForUpdate(message.userId, message.charge.period);
-      usage.refund(message.charge);
+      const current = await this.deps.messages.findById(message.id);
+      if (current?.status !== 'PENDING') return false;
+      usage.refund(current.charge);
       await this.deps.usage.save(usage);
-      if (message.charge.kind === 'BUNDLE') {
+      if (current.charge.kind === 'BUNDLE') {
         await this.deps.bundles.refund(
           {
-            subscriptionId: message.charge.subscriptionId,
-            bundlePeriodStart: message.charge.bundlePeriodStart,
+            subscriptionId: current.charge.subscriptionId,
+            bundlePeriodStart: current.charge.bundlePeriodStart,
           },
           now,
         );
       }
-      message.fail(failureCode, now);
-      await this.deps.messages.save(message);
+      current.fail(failureCode, now);
+      await this.deps.messages.save(current);
+      return true;
     });
-    this.deps.logger.warn({ messageId: message.id, failureCode }, 'quota refunded after a failed model call');
+    if (refunded) {
+      this.deps.logger.warn(
+        { messageId: message.id, failureCode },
+        'quota refunded after a failed model call',
+      );
+    } else {
+      this.deps.logger.warn(
+        { messageId: message.id, failureCode },
+        'reservation already settled; nothing to refund',
+      );
+    }
   }
 }

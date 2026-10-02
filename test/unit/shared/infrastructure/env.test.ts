@@ -34,6 +34,18 @@ describe('loadConfig', () => {
     });
   });
 
+  it('requires the pending-reservation timeout to outlast the request timeout by more than 5 s', () => {
+    const rejected = (extra: Record<string, string>) => () => loadConfig({ ...base, ...extra });
+    expect(rejected({ PENDING_MESSAGE_TIMEOUT_SEC: '10' })).toThrow(
+      /PENDING_MESSAGE_TIMEOUT_SEC.*REQUEST_TIMEOUT_MS/,
+    );
+    expect(rejected({ PENDING_MESSAGE_TIMEOUT_SEC: '15' })).toThrow(ConfigError);
+    expect(
+      rejected({ PENDING_MESSAGE_TIMEOUT_SEC: '40', REQUEST_TIMEOUT_MS: '35000', LLM_TIMEOUT_MS: '8000' }),
+    ).toThrow(ConfigError);
+    expect(rejected({ PENDING_MESSAGE_TIMEOUT_SEC: '16' })).not.toThrow();
+  });
+
   it('rejects a wildcard CORS origin', () => {
     expect(() => loadConfig({ ...base, CORS_ALLOWED_ORIGINS: '*' })).toThrow(ConfigError);
   });

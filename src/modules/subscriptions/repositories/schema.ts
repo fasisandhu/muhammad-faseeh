@@ -61,7 +61,7 @@ export const subscriptions = pgTable(
     check('subscriptions_price_non_negative', sql`${t.priceCents} >= 0`),
     check('subscriptions_status_reason', sql`(${t.status} = 'ACTIVE') = (${t.inactiveReason} IS NULL)`),
     check('subscriptions_period_order', sql`${t.endDate} >= ${t.currentPeriodStart}`),
-    index('subscriptions_user_status_start_idx').on(t.userId, t.status, t.startDate.desc()),
+    index('subscriptions_user_status_start_idx').on(t.userId, t.status, t.startDate.desc().nullsFirst()),
     index('subscriptions_renewal_due_idx')
       .on(t.renewalDate)
       .where(sql`${t.status} = 'ACTIVE' AND ${t.autoRenew}`),

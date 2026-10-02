@@ -1,6 +1,7 @@
 import type request from 'supertest';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { LlmClient } from '../../src/modules/chat/index.js';
+import { TokenUsage } from '../../src/modules/chat/domain/value-objects/token-usage.js';
 import { ownerQuery } from '../support/owner-db.js';
 import { TestContext, type ApiClient } from '../support/test-context.js';
 
@@ -228,9 +229,12 @@ describe('failed model calls are never charged', () => {
   const behaviour: { mode: 'fail' | 'hang' | 'rollover' } = { mode: 'fail' };
   let ctx: TestContext;
   let alice: ApiClient;
+  // The model must never be called while a database transaction is open (spec §6.1).
+  let calledInsideTransaction = false;
 
   const llm: LlmClient = {
     async complete({ signal }) {
+      if (ctx.container.db.isInTransaction()) calledInsideTransaction = true;
       if (behaviour.mode === 'rollover') ctx.clock.set('2026-11-01T00:00:01.000Z');
       if (behaviour.mode === 'hang') {
         await new Promise((_resolve, reject) => {
@@ -256,7 +260,11 @@ describe('failed model calls are never charged', () => {
   beforeEach(async () => {
     await ctx.reset();
     behaviour.mode = 'fail';
+    calledInsideTransaction = false;
     alice = await ctx.login({ sub: 'alice', roles: ['user'] });
+  });
+  afterEach(() => {
+    expect(calledInsideTransaction).toBe(false);
   });
 
   const usedMessages = async (id: string) =>
@@ -315,5 +323,127 @@ describe('failed model calls are never charged', () => {
     );
     expect(rows).toEqual([{ period: '2026-10', paid_used: 0 }]);
     expect(await usedMessages(id)).toBe(0);
+  });
+});
+
+describe('a reservation swept while the model is still working', () => {
+  interface Gate {
+    entered: () => void;
+    outcome: Promise<'fail' | 'ok'>;
+  }
+  const state: { gate: Gate | null } = { gate: null };
+  let ctx: TestContext;
+  let alice: ApiClient;
+  let calledInsideTransaction = false;
+
+  const llm: LlmClient = {
+    async complete() {
+      if (ctx.container.db.isInTransaction()) calledInsideTransaction = true;
+      const gate = state.gate;
+      if (gate) {
+        gate.entered();
+        if ((await gate.outcome) === 'fail') throw new Error('upstream down');
+      }
+      return {
+        id: 'chatcmpl-test',
+        model: 'gpt-4o-mini',
+        content: 'late answer',
+        finishReason: 'stop',
+        usage: TokenUsage.of(10, 5),
+      };
+    },
+  };
+
+  /** Starts a request whose model call stays "in flight" until `finish` is called. */
+  const startGated = async () => {
+    let entered: () => void = () => undefined;
+    let finish: (outcome: 'fail' | 'ok') => void = () => undefined;
+    const inFlight = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const outcome = new Promise<'fail' | 'ok'>((resolve) => {
+      finish = resolve;
+    });
+    state.gate = { entered, outcome };
+    const response = ask(alice, 'slow one');
+    await inFlight;
+    return { response, finish };
+  };
+
+  const sweep = async () => {
+    // Past PENDING_MESSAGE_TIMEOUT_SEC (120 s), still inside the mock IdP's 300 s token lifetime.
+    ctx.clock.advance(200_000);
+    const sweeper = ctx.container.jobs.find((job) => job.name === 'chat-reservation-sweeper');
+    return sweeper?.run();
+  };
+
+  const counters = async () => ({
+    usage: (
+      await ownerQuery<{ free_used: number; paid_used: number; total_tokens: string }>(
+        'SELECT free_used, paid_used, total_tokens FROM monthly_usage',
+      )
+    )[0],
+    bundle: (await ownerQuery<{ used_messages: number }>('SELECT used_messages FROM subscriptions'))[0]
+      ?.used_messages,
+    messages: await ownerQuery<{
+      question: string;
+      status: string;
+      failure_code: string | null;
+      answer: string | null;
+    }>('SELECT question, status, failure_code, answer FROM chat_messages ORDER BY created_at, question'),
+  });
+
+  beforeAll(async () => {
+    ctx = await TestContext.create({ env: { FREE_MESSAGES_PER_MONTH: '0' }, overrides: { llmClient: llm } });
+  });
+  afterAll(async () => {
+    await ctx.close();
+  });
+  beforeEach(async () => {
+    await ctx.reset();
+    state.gate = null;
+    calledInsideTransaction = false;
+    alice = await ctx.login({ sub: 'alice', roles: ['user'] });
+  });
+  afterEach(() => {
+    expect(calledInsideTransaction).toBe(false);
+  });
+
+  it('refunds exactly once when the model fails after the sweeper already refunded', async () => {
+    await buy(alice, 'BASIC');
+    expect((await ask(alice, 'settled')).status).toBe(201);
+    const { response, finish } = await startGated();
+    expect(await sweep()).toEqual({ refunded: 1 });
+    finish('fail');
+    const res = await response;
+    expect(res.status).toBe(502);
+    const { usage, bundle, messages } = await counters();
+    expect(usage).toMatchObject({ free_used: 0, paid_used: 1 });
+    expect(bundle).toBe(1);
+    expect(messages).toEqual([
+      expect.objectContaining({ question: 'settled', status: 'COMPLETED' }),
+      expect.objectContaining({
+        question: 'slow one',
+        status: 'FAILED',
+        failure_code: 'ABANDONED',
+        answer: null,
+      }),
+    ]);
+  });
+
+  it('does not overwrite an abandoned reservation when the model answers late', async () => {
+    await buy(alice, 'BASIC');
+    expect((await ask(alice, 'settled')).status).toBe(201);
+    const { response, finish } = await startGated();
+    expect(await sweep()).toEqual({ refunded: 1 });
+    const tokensBefore = (await counters()).usage?.total_tokens;
+    finish('ok');
+    const res = await response;
+    expect(res.status).toBe(503);
+    expect(problem(res).code).toBe('REQUEST_TIMEOUT');
+    const { usage, bundle, messages } = await counters();
+    expect(usage).toMatchObject({ free_used: 0, paid_used: 1, total_tokens: tokensBefore });
+    expect(bundle).toBe(1);
+    expect(messages[1]).toMatchObject({ status: 'FAILED', failure_code: 'ABANDONED', answer: null });
   });
 });
