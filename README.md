@@ -38,7 +38,7 @@ New accounts can self-register on the Keycloak login page; "Sign in with GitHub"
 
 ### What it looks like when it runs
 
-Real output from the local stack, if you would rather read it than run it.
+Real output from the local stack.
 
 `pnpm e2e:smoke` logs in through the real Keycloak login form and exercises the whole API:
 
