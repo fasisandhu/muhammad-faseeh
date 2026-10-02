@@ -107,7 +107,7 @@ sequenceDiagram
     A-->>C: 201 message + remaining quota
   else model failed / timed out / client left
     A->>DB: Tx2': refund exactly the recorded charge, FAILED
-    A-->>C: 502 / 503 / 504 (quota not charged)
+    A-->>C: 502 / 503 / 504 (quota not charged, see Known limitations)
   end
 ```
 
@@ -148,7 +148,7 @@ The PDF leaves some rules open; these are the choices made, all in one place in 
 8. **Admins are also users.** An admin can chat and subscribe as themselves: every chat and subscription route allows both roles, the free quota and bundles apply to an admin exactly as to anyone else, and those calls count against the chat or subscriptions rate-limit group (the limit follows the path, not the role). The admin role only adds the `/admin/*` routes and read/manage access to other users' records.
 9. **"Authentication endpoints" means `/auth/*`** (`GET /api/v1/auth/me`, `POST /api/v1/auth/logout`), which get the stricter `auth` rate-limit group (20/min per IP, 10/min per user). Interactive login happens on Keycloak's own pages, which are protected by Keycloak's brute-force lockout instead.
 
-**Free text comes back HTML-escaped.** A question is stored and returned sanitised: markup is removed and the remaining text is HTML-escaped, so `5 > 3` is returned as `5 &gt; 3` (the mock answer quotes the question in the same form). The output is therefore safe to insert into any HTML page as it is; clients should not escape it a second time. A client that renders plain text (a terminal, a native text field) should unescape the entities first.
+**Free text comes back HTML-escaped.** A question is stored and returned sanitised: markup is removed and the remaining text is HTML-escaped, so `5 > 3` is returned as `5 &gt; 3` (the mock answer quotes the question in the same form). The output is therefore safe to insert as HTML text content as it is, and clients should not escape it a second time; quotes are not escaped, so a client placing it inside an HTML attribute value must escape it for that context. A client that renders plain text (a terminal, a native text field) should unescape the entities first.
 
 ## Security model
 
@@ -344,6 +344,7 @@ One JSON log line per request:
 
 - Paid quota can be briefly unavailable (≤ `JOBS_INTERVAL_MS`) between a bundle's end date and the next billing tick.
 - An admin-triggered billing run of a very large backlog can exceed the HTTP request timeout. The run continues and its summary is logged.
+- If the request deadline fires in the milliseconds after the answer is committed, the client receives `503 REQUEST_TIMEOUT` although the question was answered and charged; the answer is in `GET /api/v1/chat/messages`. A model failure or timeout is always refunded.
 
 ## Project structure
 

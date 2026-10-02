@@ -16,7 +16,8 @@ const stripUnsafeCharacters = (value: string): string =>
  * (script/style contents included), then strip again and NFC-normalise. The second pass is required because
  * sanitize-html decodes numeric entities (e.g. &#x202E;) into the very characters the first pass removes, and
  * normalising last keeps text composed when stripping removes a character between a letter and a combining mark.
- * The result is HTML-escaped, so it is safe in any HTML context.
+ * The result is HTML-escaped (&, <, >), so it is safe as HTML text content; quotes are not escaped, so it must be
+ * escaped again before use inside an HTML attribute value.
  */
 export function sanitizeText(input: string): string {
   const html = sanitizeHtml(stripUnsafeCharacters(input), {
