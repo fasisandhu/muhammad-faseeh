@@ -3,6 +3,7 @@ import type { Redis } from 'ioredis';
 import type { Logger } from 'pino';
 import { createApp } from './app.js';
 import { createAdminModule } from './modules/admin/index.js';
+import { createChatModule, type LlmClient } from './modules/chat/index.js';
 import { createIdentityModule } from './modules/identity/index.js';
 import { createSubscriptionsModule } from './modules/subscriptions/index.js';
 import type { Job } from './shared/application/jobs.js';
@@ -26,6 +27,7 @@ export interface ContainerOverrides {
   userCacheTtlMs?: number;
   paymentRandom?: RandomSource;
   llmRandom?: RandomSource;
+  llmClient?: LlmClient;
 }
 
 export interface Container {
@@ -78,12 +80,19 @@ export async function buildContainer(
     logger,
   });
   const admin = createAdminModule({ subscriptions });
-  // Placeholder until the chat module consumes it (Task 12).
-  /* eslint-disable @typescript-eslint/no-meaningless-void-operator */
-  void llmRandom;
-  /* eslint-enable @typescript-eslint/no-meaningless-void-operator */
-  const routes = [...identity.routes, ...subscriptions.routes, ...admin.routes];
-  const jobs: Job[] = [...subscriptions.jobs];
+  // chat → subscriptions dependency is a structural port: chat never imports the subscriptions module.
+  const chat = createChatModule({
+    config,
+    db,
+    clock,
+    ids,
+    random: llmRandom,
+    logger,
+    bundles: subscriptions.bundleQuota,
+    llm: overrides.llmClient,
+  });
+  const routes = [...identity.routes, ...chat.routes, ...subscriptions.routes, ...admin.routes];
+  const jobs: Job[] = [...subscriptions.jobs, ...chat.jobs];
 
   const app = createApp({
     config,

@@ -43,3 +43,14 @@ export class LlmTimeoutError extends DomainError<{ timeoutMs: number }> {
     });
   }
 }
+
+/** The request was cancelled (deadline or client disconnect) while waiting for the model; quota was refunded. */
+export class ChatRequestAbortedError extends DomainError<{ reason: string }> {
+  constructor(reason: string) {
+    super(
+      'REQUEST_TIMEOUT',
+      'The request was cancelled before the model answered. Your quota was not charged.',
+      { reason },
+    );
+  }
+}
