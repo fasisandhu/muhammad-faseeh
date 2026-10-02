@@ -108,6 +108,16 @@ describe('Subscription lifecycle', () => {
     }).toThrow(SubscriptionNotActiveError);
   });
 
+  it('keeps the original endDate when an overdue, not yet expired subscription is cancelled', () => {
+    const sub = buy();
+    const periodEnd = sub.endDate;
+    const afterEnd = later('2026-11-02T10:05:00.000Z');
+    sub.cancel(afterEnd);
+    expect(sub.status).toBe('INACTIVE');
+    expect(sub.cancelledAt).toEqual(afterEnd);
+    expect(sub.endDate).toEqual(periodEnd);
+  });
+
   it('renews into the next anchored period and resets usage', () => {
     const sub = buy();
     sub.consumeMessage(now);

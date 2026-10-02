@@ -175,7 +175,9 @@ export class Subscription {
     this.props.status = 'INACTIVE';
     this.props.inactiveReason = 'CANCELLED';
     this.props.cancelledAt = now;
-    this.props.endDate = ms(now) < ms(this.props.currentPeriodStart) ? this.props.currentPeriodStart : now;
+    // Never later than the period's real end (an overdue cycle not yet expired by the job), never before its start.
+    const end = Math.max(ms(this.props.currentPeriodStart), Math.min(ms(now), ms(this.props.endDate)));
+    this.props.endDate = new Date(end);
     this.props.autoRenew = false;
     this.props.renewalDate = null;
     this.props.updatedAt = now;
