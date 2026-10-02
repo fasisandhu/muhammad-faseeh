@@ -14,11 +14,16 @@ export function httpLogger(logger: Logger): RequestHandler {
     customSuccessMessage: () => 'request completed',
     customErrorMessage: () => 'request failed',
     // requestId (and userId, once the auth middleware records it) come from the logger mixin via the request context;
-    // only add userId here when the context does not already carry it, to avoid duplicate JSON keys.
-    customProps: (req, res) => ({
-      userId: currentRequestContext()?.userId === undefined ? res.locals.auth?.actor.userId : undefined,
-      route: req.route ? `${req.baseUrl}${String((req.route as { path: unknown }).path)}` : undefined,
-    }),
+    // add them here only when the context does not already carry them (e.g. logs emitted outside the request's async
+    // context, such as on client abort), to avoid duplicate JSON keys.
+    customProps: (req, res) => {
+      const context = currentRequestContext();
+      return {
+        requestId: context === undefined ? res.locals.requestId : undefined,
+        userId: context?.userId === undefined ? res.locals.auth?.actor.userId : undefined,
+        route: req.route ? `${req.baseUrl}${String((req.route as { path: unknown }).path)}` : undefined,
+      };
+    },
     serializers: {
       req: (req: { id: unknown; method: string; url: string; remoteAddress?: string }) => ({
         id: req.id,

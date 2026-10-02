@@ -50,7 +50,7 @@ function map(error: unknown, dpopAlgs: readonly string[]): Mapped {
       },
     };
   }
-  if (isRecord(error) && typeof error.type === 'string' && error.type in BODY_PARSER_CODES) {
+  if (isRecord(error) && typeof error.type === 'string' && Object.hasOwn(BODY_PARSER_CODES, error.type)) {
     const code = BODY_PARSER_CODES[error.type] ?? 'VALIDATION_FAILED';
     return {
       code,
