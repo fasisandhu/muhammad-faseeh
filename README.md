@@ -142,7 +142,7 @@ The PDF leaves some rules open; these are the choices made, all in one place in 
 
 3. **Cancellation ends the current cycle immediately** and disables renewal; nothing is deleted. Turning auto-renew off is how a subscription lapses at the end of its period.
 4. **Months are UTC calendar months.** The free quota is 3 messages per month and is used before any bundle.
-5. **The first purchase also goes through the simulated payment.** A decline returns `402 PAYMENT_FAILED` and keeps the subscription as `INACTIVE` for the audit trail.
+5. **The first purchase also goes through the simulated payment.** A decline returns `402 PAYMENT_FAILED` and keeps the subscription as `INACTIVE` for the audit trail, with `autoRenew: false` and `endDate` equal to `startDate` because no period was ever paid for. A failed renewal likewise turns auto-renew off and keeps the `endDate` of the last paid period.
 6. **A failed, timed-out or abandoned model call never consumes quota.**
 7. **Health endpoints require a probe token** (`X-Health-Token`) because the PDF forbids open endpoints.
 8. **Admins are also users.** An admin can chat and subscribe as themselves: every chat and subscription route allows both roles, the free quota and bundles apply to an admin exactly as to anyone else, and those calls count against the chat or subscriptions rate-limit group (the limit follows the path, not the role). The admin role only adds the `/admin/*` routes and read/manage access to other users' records.

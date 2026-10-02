@@ -38,6 +38,9 @@ describe('Subscription lifecycle', () => {
     expect(sub.inactiveReason).toBe('PAYMENT_FAILED');
     expect(sub.renewalDate).toBeNull();
     expect(sub.isUsableAt(now)).toBe(false);
+    // The period never started: it ends where it began and nothing is set to renew.
+    expect(sub.autoRenew).toBe(false);
+    expect(sub.endDate).toEqual(now);
   });
 
   it('has no renewal date without auto-renew', () => {
@@ -139,6 +142,8 @@ describe('Subscription lifecycle', () => {
     expect(sub.status).toBe('INACTIVE');
     expect(sub.inactiveReason).toBe('PAYMENT_FAILED');
     expect(sub.renewalDate).toBeNull();
+    expect(sub.autoRenew).toBe(false);
+    expect(sub.endDate.toISOString()).toBe('2026-11-02T10:00:00.000Z'); // the paid period really ended here
   });
 
   it('refuses to renew before it is due', () => {

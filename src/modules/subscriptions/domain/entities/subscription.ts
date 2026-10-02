@@ -43,8 +43,9 @@ export class Subscription {
     paymentSucceeded: boolean;
   }): Subscription {
     const { plan, now } = input;
-    const endDate = BillingPeriodCalculator.periodEnd(now, plan.billingCycle, 0);
     const active = input.paymentSucceeded;
+    // A declined first payment never starts a period: the record ends where it began and nothing renews.
+    const endDate = active ? BillingPeriodCalculator.periodEnd(now, plan.billingCycle, 0) : now;
     return new Subscription({
       id: input.id,
       userId: input.userId,
@@ -55,7 +56,7 @@ export class Subscription {
       price: plan.price,
       status: active ? 'ACTIVE' : 'INACTIVE',
       inactiveReason: active ? null : 'PAYMENT_FAILED',
-      autoRenew: input.autoRenew,
+      autoRenew: active && input.autoRenew,
       startDate: now,
       currentPeriodStart: now,
       endDate,
@@ -212,6 +213,7 @@ export class Subscription {
     } else {
       this.props.status = 'INACTIVE';
       this.props.inactiveReason = 'PAYMENT_FAILED';
+      this.props.autoRenew = false;
       this.props.renewalDate = null;
     }
     this.props.updatedAt = now;

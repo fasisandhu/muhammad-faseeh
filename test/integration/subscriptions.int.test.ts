@@ -106,7 +106,9 @@ describe('creating subscriptions', () => {
       status: 'INACTIVE',
       inactiveReason: 'PAYMENT_FAILED',
       renewalDate: null,
+      autoRenew: false,
     });
+    expect(many(list)[0]?.endDate).toBe(many(list)[0]?.startDate);
     expect(await paymentRows()).toEqual([{ kind: 'INITIAL', status: 'FAILED' }]);
   });
 

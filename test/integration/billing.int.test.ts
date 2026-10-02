@@ -119,6 +119,7 @@ describe('billing runs', () => {
       status: 'INACTIVE',
       inactiveReason: 'PAYMENT_FAILED',
       renewalDate: null,
+      autoRenew: false,
     });
   });
 
