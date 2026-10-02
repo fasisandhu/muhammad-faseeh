@@ -25,6 +25,7 @@
     "db:migrate": "tsx --env-file=.env src/migrate.ts",
     "cli": "tsx cli/index.ts",
     "e2e:smoke": "tsx scripts/e2e-smoke.ts",
+    "kc:inspect": "tsx scripts/inspect-token.ts",
     "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test",
     "prepare": "husky"
   },
