@@ -72,7 +72,6 @@ export async function buildContainer(
     limiters: rateLimiters,
     userCacheTtlMs: overrides.userCacheTtlMs,
   });
-  // MODULES: Tasks 11–13 add billing, chat and admin here and append their routes/jobs.
   const subscriptions = createSubscriptionsModule({
     config,
     db,

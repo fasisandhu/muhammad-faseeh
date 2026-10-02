@@ -29,7 +29,7 @@ export interface AppDependencies {
   routes: readonly Route[];
 }
 
-/** Builds the Express app. The middleware order below is the security pipeline from spec §9.1. */
+/** Builds the Express app. The middleware order below is the security pipeline: order matters. */
 export function createApp(deps: AppDependencies): Express {
   const { config, logger } = deps;
   const app = express();

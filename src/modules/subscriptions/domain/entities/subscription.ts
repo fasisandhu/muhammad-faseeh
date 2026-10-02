@@ -169,7 +169,7 @@ export class Subscription {
     this.props.updatedAt = now;
   }
 
-  /** Spec §3.3: ends the current cycle now, prevents renewals, keeps history. */
+  /** Ends the current cycle now, prevents renewals, keeps history (see README › Domain rules). */
   cancel(now: Date): void {
     this.assertActive('cancel');
     this.props.status = 'INACTIVE';

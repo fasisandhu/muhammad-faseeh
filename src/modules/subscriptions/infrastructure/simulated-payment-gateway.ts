@@ -13,7 +13,7 @@ export interface SimulatedPaymentGatewayOptions {
 }
 
 /**
- * Stand-in for a payment provider (spec §6.2–6.3): simulated latency, random declines at `failureRate`,
+ * Stand-in for a payment provider (purchases, renewals): simulated latency, random declines at `failureRate`,
  * idempotent per key. Each charge draws exactly one random number for the outcome (plus one for latency
  * when min < max), which keeps tests deterministic.
  */

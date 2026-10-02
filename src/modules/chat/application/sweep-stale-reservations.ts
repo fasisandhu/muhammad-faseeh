@@ -1,6 +1,6 @@
 import type { ChatDeps } from './chat-deps.js';
 
-/** Crash safety (spec §6.1 step 6): refunds reservations whose request died between Tx1 and Tx2. */
+/** Crash safety: refunds reservations whose request died between reserving quota and storing the answer. */
 export class SweepStaleReservations {
   constructor(private readonly deps: ChatDeps & { pendingTimeoutMs: number }) {}
 
@@ -15,7 +15,7 @@ export class SweepStaleReservations {
       const done = await this.deps.tx.run(async () => {
         const usage = await this.deps.usage.lockForUpdate(candidate.userId, candidate.charge.period);
         // Plain read, not a row lock: every status change happens under the usage-row lock held above, and
-        // locking chat_messages before subscriptions would break the lock order (spec §4.3).
+        // locking chat_messages before subscriptions would break the lock order (see ChatDeps).
         const message = await this.deps.messages.findById(candidate.id);
         if (message?.status !== 'PENDING') return false;
         usage.refund(message.charge);

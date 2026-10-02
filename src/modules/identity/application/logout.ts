@@ -1,7 +1,7 @@
 import type { AuthContext } from '../../../shared/domain/auth-context.js';
 import type { SessionRevocations } from '../domain/ports.js';
 
-/** Revokes the IdP session behind the token (or the token itself when it has no sid) — spec §6.5. */
+/** Revokes the IdP session behind the token (or the token itself when it has no sid). */
 export class Logout {
   constructor(
     private readonly revocations: SessionRevocations,

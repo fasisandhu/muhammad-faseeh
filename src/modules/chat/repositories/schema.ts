@@ -53,7 +53,7 @@ export const chatMessages = pgTable(
     status: chatMessageStatus('status').notNull(),
     chargeKind: quotaChargeKind('charge_kind').notNull(),
     chargePeriod: char('charge_period', { length: 7 }).notNull(),
-    // Cross-module reference by id only (spec §7): no foreign key into the subscriptions module.
+    // Cross-module reference by id only: no foreign key into the subscriptions module.
     subscriptionId: uuid('subscription_id'),
     bundlePeriodStart: tstz('bundle_period_start'),
     model: text('model'),

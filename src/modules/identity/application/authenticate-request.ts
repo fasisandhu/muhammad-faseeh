@@ -13,7 +13,7 @@ export interface AuthenticateInput {
   url: string;
 }
 
-/** Token checks (§9.2) → DPoP proof (§9.3) → session revocation (§9.4) → role presence → JIT provisioning. */
+/** Token checks → DPoP proof → session revocation → role presence → JIT provisioning. */
 export class AuthenticateRequest {
   constructor(
     private readonly deps: {

@@ -18,7 +18,7 @@ const container = await buildContainer(config);
 const { logger } = container;
 
 const server = createServer(container.app);
-// Slow-loris / oversized-request protection at the socket level (spec §9.1 step 0).
+// Slow-loris / oversized-request protection at the socket level, before any Express middleware runs.
 server.headersTimeout = 15_000;
 server.requestTimeout = 20_000;
 server.keepAliveTimeout = 5_000;

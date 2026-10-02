@@ -33,7 +33,7 @@ function readCredentials(req: Request): { accessToken: string; proof: string } {
   return { accessToken: match[1], proof };
 }
 
-/** Runs for every /api request (spec §9.1 step 10b). Failures count against the IP's auth-failure budget. */
+/** Runs for every /api request before route matching. Failures count against the IP's auth-failure budget. */
 export function authenticateMiddleware(deps: {
   authenticate: AuthenticateRequest;
   limiters: RateLimiterSet;

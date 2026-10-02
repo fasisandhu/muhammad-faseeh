@@ -12,7 +12,7 @@ const stripUnsafeCharacters = (value: string): string =>
   value.replace(CONTROL_CHARACTERS, '').replace(INVISIBLE_FORMATTING, '');
 
 /**
- * Free-text sanitisation (spec §9.7): strip control and invisible formatting characters, drop all HTML
+ * Free-text sanitisation: strip control and invisible formatting characters, drop all HTML
  * (script/style contents included), then strip again and NFC-normalise. The second pass is required because
  * sanitize-html decodes numeric entities (e.g. &#x202E;) into the very characters the first pass removes, and
  * normalising last keeps text composed when stripping removes a character between a letter and a combining mark.

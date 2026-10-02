@@ -3,7 +3,7 @@ import type { Logger } from 'pino';
 import { pinoHttp } from 'pino-http';
 import { currentRequestContext } from '../infrastructure/logging/request-context.js';
 
-/** One "request completed" line per request: requestId, userId, route, status, responseTimeMs (spec §11). */
+/** One "request completed" line per request: requestId, userId, route, status, responseTimeMs. */
 export function httpLogger(logger: Logger): RequestHandler {
   return pinoHttp<Request, Response>({
     logger,

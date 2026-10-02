@@ -6,7 +6,7 @@ const byLatestFirst = (a: Subscription, b: Subscription): number =>
   (b.id > a.id ? 1 : b.id < a.id ? -1 : 0);
 
 /**
- * Spec §3.1: deduct from the bundle with the latest remaining quota — the most recently started usable
+ * Deduct from the bundle with the latest remaining quota — the most recently started usable
  * bundle that still has messages. Switching to soonest-expiring-first would only change `byLatestFirst`.
  */
 export const BundleSelectionPolicy = {

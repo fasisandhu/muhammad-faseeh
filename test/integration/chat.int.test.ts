@@ -229,7 +229,7 @@ describe('failed model calls are never charged', () => {
   const behaviour: { mode: 'fail' | 'hang' | 'rollover' } = { mode: 'fail' };
   let ctx: TestContext;
   let alice: ApiClient;
-  // The model must never be called while a database transaction is open (spec §6.1).
+  // The model must never be called while a database transaction is open: row locks would be held for seconds.
   let calledInsideTransaction = false;
 
   const llm: LlmClient = {
@@ -312,7 +312,7 @@ describe('failed model calls are never charged', () => {
     expect(await usedMessages(id)).toBe(0);
   });
 
-  it('refunds into the month that was charged even if the month rolls over (Review Focus 4)', async () => {
+  it('refunds into the month that was charged even if the month rolls over', async () => {
     const id = await buy(alice, 'BASIC');
     ctx.clock.set('2026-10-31T23:59:59.000Z');
     alice = await ctx.login({ sub: 'alice', roles: ['user'] });

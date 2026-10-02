@@ -1,6 +1,6 @@
 import { pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 
-/** Local mirror of identity-provider users; referenced by every module (spec §7). */
+/** Local mirror of identity-provider users; referenced by every module. */
 export const users = pgTable(
   'users',
   {

@@ -38,9 +38,9 @@ function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
 }
 
 /**
- * Spec §6.1, approach A: Tx1 reserves quota under row locks (milliseconds), the model is called with no
- * transaction open, Tx2 stores the answer. Any failure runs a compensating transaction that refunds exactly
- * the recorded charge, so a failed call never costs the user a message.
+ * Reserve → model → finalize: Tx1 reserves quota under row locks (milliseconds), the model is called
+ * with no transaction open, Tx2 stores the answer. Any failure runs a compensating transaction that
+ * refunds exactly the recorded charge, so a failed call never costs the user a message.
  */
 export class AskQuestion {
   private readonly allocator: QuotaAllocator;
@@ -137,7 +137,7 @@ export class AskQuestion {
   }
 
   /**
-   * Refunds into the period recorded on the charge — even if the month rolled over meanwhile (Review Focus 4).
+   * Refunds into the period recorded on the charge — even if the month rolled over meanwhile.
    * Re-reads the reservation under the usage-row lock and does nothing if the sweeper already refunded it.
    */
   private async compensate(message: ChatMessage, failureCode: string): Promise<void> {

@@ -1,5 +1,5 @@
 #!/bin/sh
-# Creates the least-privilege role used by the API (spec §7). Runs once, on first initialisation.
+# Creates the least-privilege role used by the API. Runs once, on first initialisation.
 # ggi_app may read, insert and update; it can never DELETE rows or run DDL.
 set -eu
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \

@@ -2,7 +2,7 @@ import { usd } from '../value-objects/money.js';
 import type { Plan } from '../value-objects/plan.js';
 import { BILLING_CYCLES, TIERS, monthsIn, type BillingCycle, type Tier } from '../value-objects/tier.js';
 
-/** Monthly allowance and price per tier (spec §5.3). Yearly = 12× allowance at 10× price ("two months free"). */
+/** Monthly allowance and price per tier. Yearly = 12× allowance at 10× price ("two months free"). */
 const MONTHLY: Record<Tier, { messages: number | null; priceCents: number }> = {
   BASIC: { messages: 10, priceCents: 999 },
   PRO: { messages: 100, priceCents: 2999 },

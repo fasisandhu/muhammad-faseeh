@@ -63,7 +63,7 @@ describe('authenticated API access', () => {
     expect(await emailOf('alice')).toBe('alice@example.com');
   });
 
-  it('accepts users without an email claim (Review Focus 1)', async () => {
+  it('accepts users without an email claim', async () => {
     const client = await ctx.login({ sub: 'github-private', roles: ['user'], email: null });
     const res = await client.get('/api/v1/auth/me');
     expect(res.status).toBe(200);
@@ -212,7 +212,7 @@ describe('authenticated API access', () => {
   });
 });
 
-describe('garbage authentication headers (Review Focus 5)', () => {
+describe('garbage authentication headers', () => {
   let ctx: TestContext;
   beforeAll(async () => {
     ctx = await TestContext.create();

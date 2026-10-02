@@ -24,7 +24,7 @@ export class DrizzleUsageRepository implements UsageRepository {
 
   /**
    * INSERT … ON CONFLICT DO NOTHING, then SELECT … FOR UPDATE. Concurrent first requests of a month queue on the
-   * unique key, then on the row lock — every quota decision for a user is serialised here (spec §6.1).
+   * unique key, then on the row lock — every quota decision for a user is serialised here.
    */
   async lockForUpdate(userId: string, period: UsagePeriod): Promise<MonthlyUsage> {
     const db = this.ctx.executor();

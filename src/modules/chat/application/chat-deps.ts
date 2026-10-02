@@ -6,7 +6,7 @@ import type { BundleQuotaPort } from '../domain/ports/bundle-quota-port.js';
 import type { ChatMessageRepository } from '../domain/ports/chat-message-repository.js';
 import type { UsageRepository } from '../domain/ports/usage-repository.js';
 
-/** Lock order everywhere: monthly_usage → subscriptions → chat_messages (spec §4.3). */
+/** Lock order everywhere: monthly_usage → subscriptions → chat_messages, so flows cannot deadlock. */
 export interface ChatDeps {
   tx: TransactionManager;
   usage: UsageRepository;

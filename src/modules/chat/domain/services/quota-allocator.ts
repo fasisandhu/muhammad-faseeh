@@ -3,7 +3,7 @@ import { QuotaExhaustedError } from '../errors.js';
 import type { BundleQuotaPort } from '../ports/bundle-quota-port.js';
 import { bundleCharge, freeCharge, type QuotaCharge } from '../value-objects/quota-charge.js';
 
-/** Charging order (spec §3.5): free monthly quota first, then a subscription bundle, otherwise a typed error. */
+/** Charging order: free monthly quota first, then a subscription bundle, otherwise a typed error. */
 export class QuotaAllocator {
   constructor(private readonly freeMessagesPerMonth: number) {}
 
