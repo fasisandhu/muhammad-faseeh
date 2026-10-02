@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { RequestHandler } from 'express';
-import { requestContext } from '../infrastructure/logging/request-context.js';
+import { currentRequestContext, requestContext } from '../infrastructure/logging/request-context.js';
 
 const SAFE_REQUEST_ID = /^[A-Za-z0-9._-]{8,64}$/;
 
@@ -13,4 +13,10 @@ export function requestId(): RequestHandler {
     res.setHeader('X-Request-Id', id);
     requestContext.run({ requestId: id }, next);
   };
+}
+
+/** After authentication: every later log line of this request carries the user id. */
+export function bindUserToLogContext(userId: string): void {
+  const context = currentRequestContext();
+  if (context) context.userId = userId;
 }

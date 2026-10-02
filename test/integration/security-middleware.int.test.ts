@@ -4,11 +4,16 @@ import { describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app.js';
 import { createLogger } from '../../src/shared/infrastructure/logging/logger.js';
 import { createErrorHandler } from '../../src/shared/http/error-handler.js';
+import { HttpError } from '../../src/shared/http/problem.js';
 import { createRateLimiters } from '../../src/shared/http/rate-limit.js';
 import { requestId } from '../../src/shared/http/request-id.js';
 import { requestTimeout } from '../../src/shared/http/timeout.js';
 import { captureLogs } from '../support/log-capture.js';
 import { HEALTH_TOKEN, testConfig } from '../support/test-config.js';
+
+const denyAll: express.RequestHandler = (_req, _res, next) => {
+  next(new HttpError('UNAUTHENTICATED', 'Authentication is required.', { challenge: 'missing' }));
+};
 
 const healthy = { database: () => Promise.resolve(), redis: () => Promise.resolve() };
 
@@ -21,6 +26,8 @@ function build(options: { db?: () => Promise<void> } = {}) {
     logger,
     health: { ...healthy, database: options.db ?? healthy.database },
     rateLimiters: createRateLimiters(null, config.rateLimits),
+    authenticate: denyAll,
+    routes: [],
   });
   return { app, logs };
 }
