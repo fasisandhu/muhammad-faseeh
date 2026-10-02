@@ -28,7 +28,7 @@ async function probe(check: () => Promise<void>, timeoutMs: number): Promise<'up
   }
 }
 
-/** Liveness and readiness, protected by a machine credential because the spec forbids open endpoints. */
+/** Liveness and readiness, protected by a machine credential because the assessment forbids open endpoints. */
 export function healthRouter(options: {
   token: string;
   checks: HealthChecks;
@@ -42,7 +42,10 @@ export function healthRouter(options: {
     next(
       timingSafeEqual(provided, expected)
         ? undefined
-        : new HttpError('UNAUTHENTICATED', 'A valid X-Health-Token header is required.'),
+        : new HttpError('UNAUTHENTICATED', 'A valid X-Health-Token header is required.', undefined, {
+            // RFC 9110 §11.6.1: every 401 names the scheme the client must use.
+            'WWW-Authenticate': 'X-Health-Token',
+          }),
     );
   });
   router.get('/live', (_req, res) => {

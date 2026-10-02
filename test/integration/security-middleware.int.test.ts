@@ -61,12 +61,12 @@ describe('security middleware', () => {
 
   it('protects health endpoints with the probe token', async () => {
     const { app } = build();
-    expectProblem(await request(app).get('/health/live'), 401, 'UNAUTHENTICATED');
-    expectProblem(
-      await request(app).get('/health/live').set('X-Health-Token', 'wrong'),
-      401,
-      'UNAUTHENTICATED',
-    );
+    const missing = await request(app).get('/health/live');
+    expectProblem(missing, 401, 'UNAUTHENTICATED');
+    expect(missing.headers['www-authenticate']).toBe('X-Health-Token');
+    const wrong = await request(app).get('/health/ready').set('X-Health-Token', 'wrong');
+    expectProblem(wrong, 401, 'UNAUTHENTICATED');
+    expect(wrong.headers['www-authenticate']).toBe('X-Health-Token');
     const ready = await request(app).get('/health/ready').set('X-Health-Token', HEALTH_TOKEN);
     expect(ready.status).toBe(200);
     expect(ready.body).toEqual({ status: 'ready', checks: { database: 'up', redis: 'up' } });
